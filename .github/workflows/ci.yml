@@ -1,0 +1,29 @@
+# The helper and logic tests on every push and pull request. The QML load tests need Plasma 6 and report
+# SKIPPED here; they run on a Plasma desktop through tests/run_all.sh.
+# permissions: {} at the top and contents: read for the one job (least privilege, A1); actions pinned by SHA (A2).
+name: tests
+
+on:
+  push:
+  pull_request:
+
+permissions: {}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: lts/*
+      - name: Tests
+        run: bash tests/run_all.sh

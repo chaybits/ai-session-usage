@@ -1,0 +1,13 @@
+{
+    "KPackageStructure": "Plasma/Applet",
+    "KPlugin": {
+        "Category": "System Information",
+        "Description": "Claude Code and ChatGPT (Codex) usage limits: session, weekly and per-model caps with reset countdowns",
+        "Icon": "utilities-system-monitor",
+        "Id": "io.github.chaybits.aisessionusage",
+        "License": "GPL-3.0-or-later",
+        "Name": "AI Session Usage",
+        "Version": "0.1.0"
+    },
+    "X-Plasma-API-Minimum-Version": "6.0"
+}

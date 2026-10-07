@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kcfg xmlns="http://www.kde.org/standards/kcfg/1.0"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.kde.org/standards/kcfg/1.0 http://www.kde.org/standards/kcfg/1.0/kcfg.xsd">
+  <kcfgfile name=""/>
+  <group name="General">
+    <entry name="refreshMinutes" type="Int">
+      <label>Minutes between automatic refreshes</label>
+      <default>5</default>
+      <min>1</min>
+      <max>120</max>
+    </entry>
+    <entry name="showClaude" type="Bool">
+      <label>Show the Claude Code limits</label>
+      <default>true</default>
+    </entry>
+    <entry name="claudeSource" type="String">
+      <label>Where the Claude limits come from: claudecode (Claude Code asked for its usage, headless) or statusline (what Claude Code passes its status line); neither reads the login (an older value, endpoint, is read as claudecode)</label>
+      <default>claudecode</default>
+    </entry>
+    <entry name="claudeCommand" type="String">
+      <label>The Claude Code program for the claudecode source; empty means claude on the PATH (or ~/.local/bin/claude)</label>
+      <default></default>
+    </entry>
+    <entry name="credentialsPath" type="String">
+      <label>Claude Code login file, only checked to exist (with none the provider is left out); empty means $CLAUDE_CONFIG_DIR or ~/.claude</label>
+      <default></default>
+    </entry>
+    <entry name="showCodex" type="Bool">
+      <label>Show the ChatGPT (Codex) limits</label>
+      <default>true</default>
+    </entry>
+    <entry name="codexAuthPath" type="String">
+      <label>Codex login file; empty means $CODEX_HOME/auth.json or ~/.codex/auth.json</label>
+      <default></default>
+    </entry>
+  </group>
+  <group name="Rows">
+    <entry name="hiddenRows" type="StringList">
+      <label>Ids of the rows not shown (for example claude:weekly_scoped:Fable)</label>
+      <default></default>
+    </entry>
+    <entry name="rowOrder" type="StringList">
+      <label>Ids of the rows in the order shown; rows not listed follow, each service's in the server's order</label>
+      <default></default>
+    </entry>
+    <entry name="knownRows" type="String">
+      <label>Every row shown so far, as JSON, so the settings can offer it for hiding (written by the widget)</label>
+      <default></default>
+    </entry>
+  </group>
+  <group name="Layout">
+    <entry name="placedAtDesignSize" type="Bool">
+      <label>Set by the widget a moment after it is first shown on a desktop; from then on it asks for no more room than it has, so a size the user set is kept</label>
+      <default>false</default>
+    </entry>
+  </group>
+  <group name="Appearance">
+    <entry name="sizeMode" type="String">
+      <label>fit: the content zooms with the widget's width; fixed: zoomPercent</label>
+      <default>fit</default>
+    </entry>
+    <entry name="zoomPercent" type="Int">
+      <label>Zoom in percent when sizeMode is fixed</label>
+      <default>100</default>
+      <min>50</min>
+      <max>300</max>
+    </entry>
+    <entry name="overflowMode" type="String">
+      <label>When the rows do not fit: scroll, grow (make the widget taller) or shrink (smaller text)</label>
+      <default>scroll</default>
+    </entry>
+    <entry name="staleMinutes" type="Int">
+      <label>Draw the numbers in staleColor when the last good answer is older than this; 0 means never</label>
+      <default>15</default>
+      <min>0</min>
+      <max>1440</max>
+    </entry>
+    <entry name="staleColor" type="Color">
+      <label>Colour of numbers older than staleMinutes (yellow, apart from the warning orange and critical red)</label>
+      <default>#fdbc4b</default>
+    </entry>
+    <entry name="warnPercent" type="Int">
+      <label>A percentage from this value up is drawn in the warning colour; 0 means never</label>
+      <default>80</default>
+      <min>0</min>
+      <max>100</max>
+    </entry>
+    <entry name="criticalPercent" type="Int">
+      <label>A percentage from this value up is drawn in the critical colour; 0 means never</label>
+      <default>95</default>
+      <min>0</min>
+      <max>100</max>
+    </entry>
+    <entry name="warnColor" type="Color">
+      <label>Colour of a percentage from warnPercent up</label>
+      <default>#f67400</default>
+    </entry>
+    <entry name="criticalColor" type="Color">
+      <label>Colour of a percentage from criticalPercent up</label>
+      <default>#da4453</default>
+    </entry>
+  </group>
+</kcfg>
