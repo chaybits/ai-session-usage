@@ -3,9 +3,10 @@
 
 A .plasmoid is a zip with metadata.json at its root, what ``kpackagetool6 --type Plasma/Applet --install`` and the
 KDE Store take. The version comes from src/metadata.json, the one place it is written. The zip is reproducible:
-entries sorted, one fixed timestamp, plain-file permissions, so the same tree gives the same bytes on any
-machine, and a downloaded package can be compared with a local build. It refuses to pack a ``__pycache__`` or a
-``.pyc``: a compiled module holds the path it was compiled at.
+entries sorted, one fixed timestamp, plain-file permissions, and stored rather than deflated (deflate output
+differs between zlib builds, seen between this machine and a GitHub runner), so the same tree gives the same
+bytes on any machine, and a downloaded package can be compared with a local build. It refuses to pack a
+``__pycache__`` or a ``.pyc``: a compiled module holds the path it was compiled at.
 
 Usage: build_plasmoid.py [--src DIR] [--out DIR]    (defaults: the src/ beside this script's folder, dist/)
 Prints the two paths it wrote, one per line; exit 1 with a message on any refusal.
@@ -81,7 +82,7 @@ def build(src: Path, out: Path) -> tuple[Path, Path]:
     with zipfile.ZipFile(target, "w") as archive:
         for path in files:
             info = zipfile.ZipInfo(path.relative_to(src).as_posix(), date_time=FIXED_TIME)
-            info.compress_type = zipfile.ZIP_DEFLATED
+            info.compress_type = zipfile.ZIP_STORED  # a compressed stream is zlib-build specific; the package is small
             info.external_attr = FILE_MODE
             archive.writestr(info, path.read_bytes())
     digest = hashlib.sha256(target.read_bytes()).hexdigest()

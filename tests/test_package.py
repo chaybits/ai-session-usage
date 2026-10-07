@@ -65,6 +65,8 @@ class TestBuild(unittest.TestCase):
             for name in names:
                 self.assertEqual(archive.read(name), (SRC / name).read_bytes(), name)
                 self.assertEqual(archive.getinfo(name).date_time, (1980, 1, 1, 0, 0, 0), "one fixed timestamp")
+                self.assertEqual(archive.getinfo(name).compress_type, zipfile.ZIP_STORED,
+                                 "stored, not deflated: compressed bytes differ between zlib builds")
 
     def test_checksum_file_matches_and_is_in_sha256sum_form(self) -> None:
         digest, name = self.checksum.read_text(encoding="utf-8").split()
