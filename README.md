@@ -21,7 +21,9 @@ From a clone, `python3 scripts/build_plasmoid.py` writes the same package to `di
 ln -s "$PWD/src" ~/.local/share/plasma/plasmoids/io.github.chaybits.aisessionusage
 ```
 
-You should see **AI Session Usage** in **Add Widgets**. Placed on the desktop, it shows one row per limit; a provider you are not logged in to is left out.
+You should see **AI Session Usage** in **Add Widgets**.
+
+**Windows:** the same card is a [Rainmeter](https://www.rainmeter.net/) skin. Download the `.rmskin` from the release and open it; Rainmeter's Skin Installer loads it. It needs Rainmeter 4.5 or newer and Python 3.9 or newer as `python` on the `PATH` (the installer from python.org with "Add to PATH" ticked, or `winget install Python.Python.3.12`), plus Claude Code and/or the Codex CLI installed and logged in. The skin's variables (`Manage`, the skin, `Variables`) hold the refresh interval, the colours, the Claude source and, when a tool is not on the `PATH`, its program. Right-click the skin for the project page. Placed on the desktop, it shows one row per limit; a provider you are not logged in to is left out.
 
 For Claude, the widget by default asks Claude Code itself for its usage (it runs `claude` once per refresh, with no prompt), so it never touches your login. Claude Code must be installed and logged in. A lighter choice in the settings takes the numbers Claude Code passes to its status line instead (5-hour and weekly only); for that, add this to `~/.claude/settings.json` (the settings page shows the line with your path filled in):
 

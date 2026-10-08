@@ -9,6 +9,8 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 python3 -B "$HERE/test_package.py"
+python3 -B "$HERE/test_rmskin.py"
+python3 -B "$HERE/test_skin_lua.py"
 python3 -B "$HERE/test_fetch_usage.py"
 python3 -B "$HERE/test_statusline.py"
 python3 -B "$HERE/test_claudecode.py"

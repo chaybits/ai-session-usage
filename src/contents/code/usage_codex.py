@@ -140,7 +140,8 @@ def run(auth: Path | None, command: str | None = None) -> dict:
     login = auth or default_auth()
     if not login.exists():
         return {"ok": False, "error": "nologin", "message": f"{login} not found"}
-    exe = find_program(command, "codex", (Path.home() / ".local/bin/codex", Path.home() / ".npm-global/bin/codex"))
+    exe = find_program(command, "codex", (Path.home() / ".local/bin/codex", Path.home() / ".npm-global/bin/codex",
+                                          Path(os.environ.get("APPDATA", "")) / "npm/codex.cmd"))  # npm on Windows
     if exe is None:
         return {"ok": False, "error": "nocli", "message": command or "codex"}
     requests = [

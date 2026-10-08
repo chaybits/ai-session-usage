@@ -1,5 +1,5 @@
-# Builds the installable package from a version tag and drafts the GitHub release with it: the .plasmoid, its
-# SHA-256 file and a build-provenance attestation. Publishing the draft is a human step, after a look at the
+# Builds the installable packages from a version tag and drafts the GitHub release with them: the .plasmoid
+# (KDE Plasma) and the .rmskin (Windows, Rainmeter), each with its SHA-256 file and a build-provenance attestation. Publishing the draft is a human step, after a look at the
 # assets. The tag must name the version in src/metadata.json, so the two can never disagree.
 # permissions: {} at the top and only what the one job needs (least privilege); actions pinned by SHA.
 name: release
@@ -24,18 +24,22 @@ jobs:
         run: |
           version="$(python3 -c 'import json; print(json.load(open("src/metadata.json"))["KPlugin"]["Version"])')"
           test "${GITHUB_REF_NAME}" = "v${version}" || { echo "tag ${GITHUB_REF_NAME}, but metadata.json says ${version}"; exit 1; }
-      - name: Build the package
-        run: python3 -B scripts/build_plasmoid.py
+      - name: Build the packages
+        run: |
+          python3 -B scripts/build_plasmoid.py
+          python3 -B scripts/build_rmskin.py
       - name: Verify the checksum
         run: cd dist && sha256sum -c ./*.sha256
       - name: Attest the build provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: dist/*.plasmoid
+          subject-path: |
+            dist/*.plasmoid
+            dist/*.rmskin
       - name: Draft the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "${GITHUB_REF_NAME}" --draft --verify-tag --title "${GITHUB_REF_NAME}" \
-            --notes "Install: download the .plasmoid, check it with sha256sum -c against the .sha256 file, then kpackagetool6 --type Plasma/Applet --install ai-session-usage-*.plasmoid (or --upgrade over an earlier version). Details in the README." \
-            dist/*.plasmoid dist/*.sha256
+            --notes "KDE Plasma 6: download the .plasmoid, check it with sha256sum -c against its .sha256 file, then kpackagetool6 --type Plasma/Applet --install ai-session-usage-*.plasmoid (or --upgrade over an earlier version). Windows: the .rmskin, opened by Rainmeter's Skin Installer. Details in the README." \
+            dist/*.plasmoid dist/*.rmskin dist/*.sha256

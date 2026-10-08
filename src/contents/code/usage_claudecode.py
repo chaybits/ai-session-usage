@@ -26,8 +26,9 @@ REQUEST_ID = "ai-session-usage"
 ARGS = ["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
         "--no-session-persistence", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
         "--settings", '{"disableAllHooks":true}', "--disable-slash-commands"]
-# Where Claude Code's installers put it, for a desktop whose PATH lacks ~/.local/bin.
-FALLBACKS = (Path.home() / ".local/bin/claude", Path.home() / ".claude/local/claude")
+# Where Claude Code's installers put it, for a desktop whose PATH lacks ~/.local/bin (on Windows, claude.exe there).
+FALLBACKS = (Path.home() / ".local/bin/claude", Path.home() / ".claude/local/claude",
+             Path.home() / ".local/bin/claude.exe")
 
 
 def is_our_answer(message: dict) -> bool:
