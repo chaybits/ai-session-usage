@@ -1,30 +1,41 @@
-"""ChatGPT (Codex) usage: the 5-hour and weekly limits a ChatGPT plan gives the Codex agent.
+"""ChatGPT (Codex) usage limits, asked of Codex itself: no login read here, nothing asked of OpenAI by this program.
 
-Reads the ChatGPT access token and account id the Codex CLI keeps in ``auth.json`` and asks the
-endpoint Codex's own ``/status`` reads (``GET /backend-api/wham/usage``, found in the Codex source,
-``codex-rs/backend-client``). The refresh token in the same file is never used or printed.
+Codex's app server (``codex app-server``: JSON lines over stdio, the protocol its own editor extension speaks)
+answers ``account/rateLimits/read`` with the plan's windows, per metered limit: the numbers Codex's own
+``/status`` shows. This module starts it headless, sends ``initialize``, ``initialized`` and that one request,
+reads the answer and closes the connection, on which the server exits. OpenAI marks the app server experimental
+(``codex app-server --help``), so its shape may change; a change shows as "Unexpected answer". The token never
+leaves Codex. Until 2026-10-08 this module read the token from ``auth.json`` and asked OpenAI's usage endpoint
+itself; that source is gone (docs/ARCHITECTURE.md D20; the git tag ``codex-endpoint-source-last`` and
+``archive/codex-endpoint-source-20261008/`` keep it).
 """
 from __future__ import annotations
 
-import base64
 import json
 import os
 import time
 from pathlib import Path
 
-from usage_common import (CredentialError, check_header_value, get_json, is_expired, is_number,
-                          iso_from_epoch, make_row, str_or, unique_ids)
+from usage_common import (ask_cli, find_program, is_number, iso_from_epoch, make_row, package_version, str_or,
+                          unique_ids)
 
 PROVIDER = "codex"
-USAGE_URL = "https://chatgpt.com/backend-api/wham/usage"
-# The two windows a plan carries, in the order Codex shows them.
-WINDOW_SLOTS = (("primary_window", "primary"), ("secondary_window", "secondary"))
+# Bounds the whole Codex run (it answers in well under a second); the widget's watchdog (60 s) bounds the helper.
+TIMEOUT_S = 30
+CLIENT_NAME = "ai-session-usage"
+# The id of our one request; the server echoes it on the answer.
+REQUEST_ID = 2
 SECONDS_PER_DAY = 86_400
+# The plan's own limit carries this id in the answer. Its rows keep the ids the widget has always used for the
+# plan's windows (codex:primary, codex:secondary), so hidden or moved rows carry over from earlier versions.
+PLAN_LIMIT_ID = "codex"
+# The two windows a limit carries, in the order Codex shows them.
+WINDOW_SLOTS = (("primary", "primary"), ("secondary", "secondary"))
 
 
 def default_auth() -> Path:
     """
-    Return the login file Codex uses.
+    Return the login file Codex uses (only ever checked for existence here).
 
     Returns:
         ``$CODEX_HOME/auth.json``, or ``~/.codex/auth.json``.
@@ -33,66 +44,12 @@ def default_auth() -> Path:
     return Path(base) / "auth.json"
 
 
-def jwt_expiry_ms(token: str) -> int | None:
-    """
-    Read the ``exp`` claim of a JWT without verifying it (only to skip a call bound to fail).
-
-    Args:
-        token: The access token.
-
-    Returns:
-        The expiry in epoch milliseconds, or None when the token is not a JWT with a numeric ``exp``.
-    """
-    parts = token.split(".")
-    if len(parts) != 3:
-        return None
-    try:
-        payload = json.loads(base64.urlsafe_b64decode(parts[1] + "=" * (-len(parts[1]) % 4)))
-    except ValueError:  # bad base64 (binascii.Error), bad UTF-8 or bad JSON
-        return None
-    exp = payload.get("exp") if isinstance(payload, dict) else None
-    return int(exp * 1000) if is_number(exp) else None
-
-
-def read_auth(path: Path) -> tuple[str, str | None, int | None]:
-    """
-    Read the access token, the account id and the token's expiry from Codex's ``auth.json``.
-
-    Args:
-        path: The login file.
-
-    Returns:
-        ``(access_token, account_id_or_None, expires_at_ms_or_None)``.
-
-    Raises:
-        CredentialError: ``nologin`` when there is no file or no ChatGPT login in it (an API-key
-            login has none); ``unreadable`` when the file or a value in it cannot be used. Messages
-            never contain the token.
-    """
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except FileNotFoundError:
-        raise CredentialError("nologin", f"{path} not found") from None
-    except (OSError, ValueError) as exc:  # ValueError: bad JSON and bad UTF-8
-        raise CredentialError("unreadable", f"{path}: {type(exc).__name__}") from None
-
-    tokens = data.get("tokens") if isinstance(data, dict) else None
-    token = tokens.get("access_token") if isinstance(tokens, dict) else None
-    if not isinstance(token, str) or not token.strip():
-        raise CredentialError("nologin", "no ChatGPT login (tokens.access_token) in the Codex login file")
-    token = check_header_value(token, "access token", path)
-    account = tokens.get("account_id")
-    account = check_header_value(account, "account id", path) if isinstance(account, str) and account.strip() else None
-    return token, account, jwt_expiry_ms(token)
-
-
 def window_label(seconds: object) -> tuple[str, str]:
     """
     Name a limit window by its length, matching the Claude rows' wording.
 
     Args:
-        seconds: ``limit_window_seconds`` from the response.
+        seconds: The window's length in seconds.
 
     Returns:
         ``(group, label)``: ``session`` and "Session (5hr)" under a day; ``weekly`` and "Weekly (7 day)"
@@ -107,101 +64,106 @@ def window_label(seconds: object) -> tuple[str, str]:
     days = round(seconds / SECONDS_PER_DAY)
     if days == 7:
         return "weekly", "Weekly (7 day)"
-    if 28 <= days <= 31:  # the free plan's window (30 days, seen 2026-10-05)
+    if 28 <= days <= 31:  # the free plan's window (30 days, seen 2026-10-05 and 2026-10-08)
         return "weekly", f"Monthly ({days} day)"
     return "weekly", f"{days}-day"
 
 
-def window_rows(details: object, id_prefix: str, suffix: str | None) -> list[dict]:
+def window_rows(snapshot: dict, id_prefix: str, suffix: str | None) -> list[dict]:
     """
-    Turn one ``rate_limit`` object (a primary and a secondary window) into rows.
+    Turn one limit's snapshot (a primary and a secondary window) into rows.
 
     Args:
-        details: The ``rate_limit`` value: ``{primary_window: {used_percent, limit_window_seconds,
-            reset_after_seconds, reset_at}, secondary_window: {...}}``.
-        id_prefix: Prefix of the row ids ("" for the plan's own limits).
-        suffix: Text added to the label in parentheses (the model of an additional limit), or None.
+        snapshot: ``{primary: {usedPercent, windowDurationMins, resetsAt}, secondary: {...} | null, ...}``.
+        id_prefix: Prefix of the row ids ("" for the plan's own limit).
+        suffix: Text added to the label in parentheses (the name of another metered limit), or None.
 
     Returns:
         Zero to two rows.
     """
     rows: list[dict] = []
-    if not isinstance(details, dict):
-        return rows
     for key, short in WINDOW_SLOTS:
-        w = details.get(key)
-        if not isinstance(w, dict) or not is_number(w.get("used_percent")):
+        window = snapshot.get(key)
+        if not isinstance(window, dict) or not is_number(window.get("usedPercent")):
             continue
-        group, label = window_label(w.get("limit_window_seconds"))
+        minutes = window.get("windowDurationMins")
+        group, label = window_label(minutes * 60 if is_number(minutes) else None)
         if suffix:
             label = f"{label} ({suffix})"
-        resets_at = iso_from_epoch(w.get("reset_at"))
-        if resets_at is None and is_number(w.get("reset_after_seconds")):
-            resets_at = iso_from_epoch(time.time() + w["reset_after_seconds"])
-        rows.append(make_row(PROVIDER, f"{id_prefix}{short}", short, group, label, w["used_percent"], resets_at))
+        rows.append(make_row(PROVIDER, f"{id_prefix}{short}", short, group, label, window["usedPercent"],
+                             iso_from_epoch(window.get("resetsAt"))))
     return rows
 
 
-def limit_rows(body: dict) -> list[dict]:
+def rows_from_answer(result: dict) -> tuple[list[dict], str | None]:
     """
-    Rows for the plan's limits, then for each additional (per-model) limit, in the server's order.
+    Turn the ``account/rateLimits/read`` result into display rows, and read the plan type.
 
     Args:
-        body: Decoded response body.
+        result: The answer's ``result``: ``rateLimits`` (the plan's own limit, with ``planType``) and, when
+            present, ``rateLimitsByLimitId`` (every metered limit, keyed by its id, the plan's among them).
 
     Returns:
-        Rows; empty when the response carries no usable window.
+        ``(rows, plan)``: the plan's own windows first, then each other limit's in the server's order, named
+        after it; ``rows`` is empty when no window has a number.
     """
-    rows = window_rows(body.get("rate_limit"), "", None)
-    extra = body.get("additional_rate_limits")
-    for item in extra if isinstance(extra, list) else []:
-        if not isinstance(item, dict):
-            continue
-        name = str_or(item.get("limit_name"), None) or str_or(item.get("metered_feature"), None) or "extra"
-        feature = str_or(item.get("metered_feature"), None) or name
-        rows.extend(window_rows(item.get("rate_limit"), f"{feature}:", name))
-    return unique_ids(rows)
+    main = result.get("rateLimits") if isinstance(result.get("rateLimits"), dict) else {}
+    by_id = result.get("rateLimitsByLimitId")
+    if isinstance(by_id, dict) and by_id:
+        snapshots = {str(limit_id): snap for limit_id, snap in by_id.items() if isinstance(snap, dict)}
+    elif main:
+        snapshots = {str_or(main.get("limitId"), None) or PLAN_LIMIT_ID: main}
+    else:
+        snapshots = {}
+    rows: list[dict] = []
+    for limit_id in sorted(snapshots, key=lambda key: key != PLAN_LIMIT_ID):  # stable: the plan first
+        snapshot = snapshots[limit_id]
+        if limit_id == PLAN_LIMIT_ID:
+            rows.extend(window_rows(snapshot, "", None))
+        else:
+            rows.extend(window_rows(snapshot, f"{limit_id}:", str_or(snapshot.get("limitName"), None) or limit_id))
+    return unique_ids(rows), str_or(main.get("planType"), None)
 
 
-def fetch(token: str, account: str | None) -> dict:
+def run(auth: Path | None, command: str | None = None) -> dict:
     """
-    Call the usage endpoint once.
+    Produce the result for the widget by asking Codex.
 
     Args:
-        token: Access token (already validated as a plain header value).
-        account: The ChatGPT account id, sent the way Codex sends it, or None.
-
-    Returns:
-        The result object for ``emit``.
-    """
-    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
-    if account:
-        headers["ChatGPT-Account-Id"] = account
-    body, error = get_json(USAGE_URL, headers)
-    if error is not None:
-        return error
-    rows = limit_rows(body)
-    if not rows:
-        return {"ok": False, "error": "format", "message": "no rate_limit windows in response"}
-    return {"ok": True, "status": 200, "source": "rate_limit", "plan": str_or(body.get("plan_type"), None),
-            "rows": rows}
-
-
-def run(path: Path | None) -> dict:
-    """
-    Produce the result for the widget: read the login, skip the call when it has expired, fetch.
-
-    Args:
-        path: The login file, or None for Codex's default.
+        auth: Codex's login file (or None for its default). Only whether it exists is checked, never its
+            content: with no Codex login the provider is left out of the widget, and Codex is not started.
+        command: The Codex program setting, or None.
 
     Returns:
         The result object for ``emit``.
     """
-    path = path or default_auth()
+    login = auth or default_auth()
+    if not login.exists():
+        return {"ok": False, "error": "nologin", "message": f"{login} not found"}
+    exe = find_program(command, "codex", (Path.home() / ".local/bin/codex", Path.home() / ".npm-global/bin/codex"))
+    if exe is None:
+        return {"ok": False, "error": "nocli", "message": command or "codex"}
+    requests = [
+        json.dumps({"id": 1, "method": "initialize",
+                    "params": {"clientInfo": {"name": CLIENT_NAME, "version": package_version()}}}),
+        json.dumps({"method": "initialized"}),
+        json.dumps({"id": REQUEST_ID, "method": "account/rateLimits/read"}),
+    ]
     try:
-        token, account, expires_ms = read_auth(path)
-    except CredentialError as exc:
-        return {"ok": False, "error": exc.kind, "message": exc.message}
-    if is_expired(expires_ms):
-        return {"ok": False, "error": "expired", "expires_at": expires_ms // 1000}
-    return fetch(token, account)
+        done = ask_cli([exe, "app-server"], requests, lambda message: message.get("id") == REQUEST_ID, TIMEOUT_S,
+                       close_stdin_first=False)
+    except OSError as exc:
+        return {"ok": False, "error": "nocli", "message": f"{exe}: {type(exc).__name__}"}
+    if done.timed_out:
+        return {"ok": False, "error": "cli", "message": f"no answer within {TIMEOUT_S} s"}
+    if done.answer is None:
+        return {"ok": False, "error": "cli", "message": f"exit {done.returncode}: {done.tail()}".strip()}
+    if "error" in done.answer:
+        error = done.answer["error"]
+        message = error.get("message") if isinstance(error, dict) else error
+        return {"ok": False, "error": "cli", "message": (str_or(message, None) or "error")[:200]}
+    result = done.answer.get("result") if isinstance(done.answer.get("result"), dict) else {}
+    rows, plan = rows_from_answer(result)
+    if not rows:
+        return {"ok": False, "error": "format", "message": "no rate limit windows in Codex's answer"}
+    return {"ok": True, "status": 200, "source": "codex", "fetched_at": int(time.time()), "plan": plan, "rows": rows}

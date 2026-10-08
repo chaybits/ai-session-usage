@@ -14,10 +14,11 @@ Item {
     required property string scriptPath
     property string credentialsPath: ""
     // Claude only: "claudecode" (ask Claude Code itself, headless; the default) or "statusline" (read what Claude
-    // Code passed its status line); empty for a provider with one way (Codex). `program` names Claude Code for
-    // "claudecode" when it is not on the PATH
+    // Code passed its status line); empty for a provider with one way (Codex). `program` names this provider's
+    // CLI when it is not on the PATH, passed with `programOption` ("--claude" or "--codex")
     property string dataSource: ""
     property string program: ""
+    property string programOption: ""
     property int pollMs: 300000
 
     // Last successful result; kept and shown dimmed while later fetches fail.
@@ -106,8 +107,8 @@ Item {
         if (dataSource) {
             cmd += " --source " + dataSource
         }
-        if (dataSource === "claudecode" && program) {
-            cmd += " --claude " + shellQuote(program)
+        if (program && programOption) {
+            cmd += " " + programOption + " " + shellQuote(program)
         }
         if (credentialsPath) {
             cmd += " " + shellQuote(credentialsPath)

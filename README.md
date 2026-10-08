@@ -13,7 +13,7 @@ sha256sum -c ai-session-usage-*.plasmoid.sha256
 kpackagetool6 --type Plasma/Applet --install ai-session-usage-*.plasmoid
 ```
 
-Requires KDE Plasma 6, Python 3.9 or newer as `python3` on the `PATH`, and at least one of: Claude Code installed and logged in with a Claude subscription, or the Codex CLI logged in with a ChatGPT account. Nothing else is installed; the helper uses the Python standard library only. To update, run the same command with `--upgrade` instead of `--install`.
+Requires KDE Plasma 6, Python 3.9 or newer as `python3` on the `PATH`, and at least one of: Claude Code installed and logged in with a Claude subscription, or the Codex CLI installed and logged in with a ChatGPT account. Nothing else is installed; the helper uses the Python standard library only. To update, run the same command with `--upgrade` instead of `--install`.
 
 From a clone, `python3 scripts/build_plasmoid.py` writes the same package to `dist/`, or install the folder directly with `kpackagetool6 --type Plasma/Applet --install src`. For development, link the folder instead, so an edit is live after `systemctl --user restart plasma-plasmashell.service`:
 
@@ -58,7 +58,7 @@ Right-click the widget, **Configure AI Session Usage**:
 |---|---|---|
 | General | Refresh interval | 5 minutes |
 | General | Show Claude Code limits; from Claude Code itself or its status line; Claude Code program; login file (only checked to exist) | on; Claude Code itself; `claude` on the PATH; `$CLAUDE_CONFIG_DIR/.credentials.json` or `~/.claude/.credentials.json` |
-| General | Show ChatGPT (Codex) limits; login file | on; `$CODEX_HOME/auth.json` or `~/.codex/auth.json` |
+| General | Show ChatGPT (Codex) limits; Codex program; login file (only checked to exist) | on; `codex` on the PATH; `$CODEX_HOME/auth.json` or `~/.codex/auth.json` |
 | Rows | Untick a row to hide it (for example a per-model cap); move rows up and down | all shown, each service's rows in its own order |
 | Appearance | Size: fit to the widget's width (resize it to zoom), or a fixed zoom | fit to width |
 | Appearance | When the rows do not fit: scroll, make the widget taller, or shrink the text | scroll |
@@ -68,33 +68,27 @@ Right-click the widget, **Configure AI Session Usage**:
 
 `CLAUDE_CONFIG_DIR` and `CODEX_HOME` are read from the environment Plasma runs in, not from your shell; if you set either in a shell profile only, enter the file in the settings instead.
 
-## Privacy and the login tokens
+## Privacy
 
-**Claude, from Claude Code itself (the default).** The widget runs `claude` headless with one request, the usage request Claude Code's own editor extension sends, and no prompt: hooks off, no MCP server, nothing saved as a session. Claude Code asks Anthropic with its own login and answers with the limits; the widget never reads the login.
+The widget talks to no server. It asks the two command-line tools for their own usage, the way their own editor extensions do, and shows what they answer. Neither login file is read: each is only checked to exist, so that someone without that tool sees no section for it.
 
-**Claude, from the status line.** Claude Code runs `contents/code/statusline_tap.py` as its status line and hands it a description of the session. The script keeps only the usage windows in it (percentages and reset times) and the time it saw them, in `~/.cache/ai-session-usage/claude-statusline.json`; nothing else of the session is written. The widget reads that file. No login is read and no request is made; the login file is only checked to exist, so that someone without Claude Code sees no Claude section.
+**Claude, from Claude Code itself (the default).** The widget runs `claude` headless with one request, the usage request Claude Code's own editor extension sends, and no prompt: hooks off, no MCP server, nothing saved as a session. Claude Code asks Anthropic with its own login and answers with the limits.
 
-**ChatGPT.** The widget runs `contents/code/fetch_usage.py` once per refresh. It:
+**Claude, from the status line.** Claude Code runs `contents/code/statusline_tap.py` as its status line and hands it a description of the session. The script keeps only the usage windows in it (percentages and reset times) and the time it saw them, in `~/.cache/ai-session-usage/claude-statusline.json`; nothing else of the session is written. The widget reads that file. No request is made.
 
-- reads the **access token** and the account id from the login file the Codex CLI keeps (`auth.json`). The file is parsed whole, but only those two values and the token's expiry are used. The refresh token is never used, sent or printed;
-- sends the token to the same endpoint Codex's own `/status` reads, and nowhere else: `https://chatgpt.com/backend-api/wham/usage`. Redirects are refused, so the token cannot be forwarded to another host, and TLS certificates are verified;
-- **never refreshes the token.** Codex rotates its refresh token, and a second program doing so can log Codex out. When the token has expired, the widget says so and waits until you next run Codex;
-- writes nothing to disk except its own settings, and prints no token in any output, error or log.
+**ChatGPT, from Codex itself.** The widget runs `codex app-server`, the protocol Codex's own editor extension speaks, and sends one request, `account/rateLimits/read`: the numbers Codex's `/status` shows. Codex asks OpenAI with its own login and answers; the widget closes the connection and Codex exits.
 
-The widget never reads Claude Code's login file: it only checks that the file exists, so that someone without Claude Code sees no Claude section. Anthropic's [Claude Code legal and compliance](https://code.claude.com/docs/en/legal-and-compliance) page says the subscription login is for Claude Code and Anthropic's own applications; this widget only runs Claude Code, which uses that login as it does for its own editor extension.
+The helper writes nothing to disk except the status-line file above, and prints no token in any output, error or log: it never holds one.
 
-This is not an official Anthropic or OpenAI product. Claude Code's usage request and the ChatGPT usage endpoint are undocumented and can change without notice.
-
-Whether a program other than Codex may use Codex's login is for OpenAI's terms to say. Read them before you turn ChatGPT on: [Codex authentication](https://developers.openai.com/codex/auth) and the [Terms of Use](https://openai.com/policies/terms-of-use/). Either provider can be turned off in the settings.
+This is not an official Anthropic or OpenAI product. Both requests are ones the tools' makers mark experimental or document only for their own clients, and they can change without notice. The services' terms: Anthropic's [Claude Code legal and compliance](https://code.claude.com/docs/en/legal-and-compliance) and OpenAI's [Terms of Use](https://openai.com/policies/terms-of-use/). Either provider can be turned off in the settings.
 
 ## Known limitations
 
-- The ChatGPT usage endpoint is undocumented; when it changes, the ChatGPT section shows "Unexpected answer" until the widget is updated.
-- Asking Claude Code uses a request Claude Code marks as experimental; if it changes, the Claude section shows "Unexpected answer" until the widget is updated. Each refresh starts Claude Code for about two seconds.
+- Both tools are asked over requests their makers mark experimental; if one changes, that section shows "Unexpected answer" until the widget is updated. Each refresh starts Claude Code for about two seconds and Codex for under a second.
 - From Claude Code's status line, the numbers are as fresh as Claude Code's last answer: with no session running they stay as they were, shown with the time they were seen. The status line carries the 5-hour and weekly limits only; per-model caps (such as a weekly cap for one model) need the default source, Claude Code itself.
 - KDE Plasma 6 on Linux only. (On macOS Claude Code keeps its login in the Keychain, so the widget's check for a login file would find none.)
 - Subscription logins only: an API-key login has no subscription limits to show.
-- For ChatGPT, the rows are the limits the Codex usage endpoint reports (on Plus, the 5-hour and weekly limits are shared with ChatGPT Work). The message caps of ordinary ChatGPT chat are not in that answer, so they are not shown.
+- For ChatGPT, the rows are the limits Codex reports (on Plus, the 5-hour and weekly limits are shared with ChatGPT Work). The message caps of ordinary ChatGPT chat are not in that answer, so they are not shown.
 - Usage made elsewhere (claude.ai, the ChatGPT apps) counts against the same limits but appears only at the next refresh.
 - English only.
 

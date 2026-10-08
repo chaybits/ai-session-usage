@@ -247,6 +247,8 @@ STATUS_FILE = json.dumps({"captured_at": SEEN_S, "rate_limits": {
 CLAUDE_LOGIN = {"home/.claude/.credentials.json": "{}"}
 # A fake Claude Code answering the usage request (test_claudecode.py's, with the live 2026-10-07 shape).
 import test_claudecode  # noqa: E402  (beside this file)
+import test_codex  # noqa: E402  (the fake Codex app server)
+CODEX_LOGIN = {"home/.codex/auth.json": "{}"}
 
 # name -> stub (None = the real helper) and optional knobs: defaults (main.xml), locale, files, ...
 SCENARIOS: dict[str, dict] = {
@@ -265,6 +267,11 @@ SCENARIOS: dict[str, dict] = {
                                    env={"FAKE_CLAUDE_ANSWER": json.dumps(test_claudecode.ANSWER),
                                         "PYTHONDONTWRITEBYTECODE": ""}, record="record.jsonl"),
     "real-helper-no-login": dict(stub=None),
+    # both CLIs real (fakes in the sandbox's bin/): the helper asks each over its own protocol, nothing else
+    "real-helper-both-clis": dict(stub=None, files=dict(CLAUDE_LOGIN, **CODEX_LOGIN),
+                                  executables={"bin/claude": test_claudecode.FAKE, "bin/codex": test_codex.FAKE},
+                                  env={"FAKE_CLAUDE_ANSWER": json.dumps(test_claudecode.ANSWER),
+                                       "FAKE_CODEX_ANSWER": json.dumps(test_codex.ANSWER)}, record="record.jsonl"),
     "unreadable": dict(stub=stub("json.dumps({'ok': False, 'error': 'unreadable', 'message': '/x/c.json: JSONDecodeError'})")),
     # a request's failures, with the default source (Claude Code asked; the status-line source makes no request)
     "ratelimited-600": dict(stub=stub("json.dumps({'ok': False, 'error': 'ratelimited', 'status': 429, 'retry_after': 600})")),
@@ -361,7 +368,7 @@ def run_scenario(base: Path, name: str, spec: dict) -> dict:
                LANG=spec.get("locale", "en_GB.UTF-8"), PATH=f"{sandbox / 'bin'}:{SAFE_PATH}")
     env.update(spec.get("env", {}))
     if "record" in spec:
-        env["FAKE_CLAUDE_RECORD"] = str(sandbox / spec["record"])
+        env["FAKE_CLAUDE_RECORD"] = env["FAKE_CODEX_RECORD"] = str(sandbox / spec["record"])
     if "locale" in spec:
         env["LC_ALL"] = spec["locale"]
 
@@ -473,6 +480,12 @@ class TestQmlLoad(unittest.TestCase):
         self.assertRegex(p["footer"], rf"^Updated {seen}\s?[AP]M · click to refresh$", "the time Claude Code saw them")
         self.assertEqual(p["outdated"], [True], "20 minutes old: past the 15-minute default")
         self.assertEqual(self.source(p, "claude")["interval"], 30000, "a local file is read every 30 s")
+
+    def test_both_clis_asked_fill_both_sections(self) -> None:
+        p = self.probe("real-helper-both-clis")
+        self.assertEqual(p["sections"], ["claude", "codex"])
+        self.assertEqual(p["rows"], [["claude:session", "claude:weekly_all", "claude:weekly_scoped:Fable"],
+                                    ["codex:primary", "codex:codex_mini:primary"]])
 
     def test_no_login_anywhere_says_so(self) -> None:
         p = self.probe("real-helper-no-login")

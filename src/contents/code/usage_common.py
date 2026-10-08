@@ -1,59 +1,48 @@
-"""Shared parts of the usage helper: the output contract, the one HTTP call, and value checks.
+"""Shared parts of the usage helper: the output contract, how a CLI is found and asked, and value checks.
 
 Each source module (``usage_claudecode``, ``usage_statusline``, ``usage_codex``) returns a result dict;
-``fetch_usage.py`` prints it with ``emit``. The HTTP call and the login checks serve Codex alone since
-2026-10-08 (D18): Claude's login is never read here. No module refreshes a login: ``usage_codex`` reads the
-access token Codex keeps and leaves refreshing to Codex, because it rotates its refresh token and a second
-client doing the same can log it out.
+``fetch_usage.py`` prints it with ``emit``. Since 2026-10-08 (D18, D20) nothing here talks to a server or reads
+a login: Claude Code and Codex are started and asked over their own protocols, and the login files are only
+checked to exist. ``ask_cli`` is the one place a CLI is spawned: it bounds the run and, on a timeout, ends the
+whole process group, since either CLI may be installed as a launcher script that starts the real program as a
+child (a plain kill of the launcher would leave that child running).
 """
 from __future__ import annotations
 
-import functools
-import http.client
 import json
 import math
+import os
+import shutil
+import signal
+import subprocess
 import sys
+import tempfile
+import threading
 import time
-import urllib.error
-import urllib.request
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from email.utils import parsedate_to_datetime
 from pathlib import Path
+from queue import Empty, Queue
+from typing import Callable
 
-# Bounds each network step (connect, TLS, each read), not the whole run; the widget's watchdog bounds the run.
-TIMEOUT_S = 15
-# A token this close to its expiry is treated as expired, so no request is made that would fail anyway.
-EXPIRY_MARGIN_MS = 30_000
-# A Retry-After beyond this would idle the widget for hours on one odd header; a click still works.
-MAX_RETRY_S = 3600
-# Display cap on a network error message, so one odd reason cannot flood the status line.
+# Display cap on an error message, so one odd reason cannot flood the status line.
 MAX_MESSAGE_CHARS = 200
+# After the answer, how long a CLI gets to exit by itself once its stdin is closed, before its group is ended.
+EXIT_GRACE_S = 3
 
 
-class CredentialError(Exception):
-    """The login file cannot be used; ``kind`` is the error code the widget shows."""
-
-    def __init__(self, kind: str, message: str) -> None:
-        super().__init__(message)
-        self.kind = kind
-        self.message = message
-
-
-@functools.cache
-def user_agent() -> str:
+def package_version() -> str:
     """
-    Return the User-Agent sent to every endpoint, carrying the package version.
+    Return the package version, read from the package's ``metadata.json`` (the one place it is written).
 
     Returns:
-        ``ai-session-usage/<version>``, the version read from the package's ``metadata.json`` (the one
-        place it is written); ``unknown`` when that file cannot be read, which the tests would catch.
+        The version, or ``unknown`` when that file cannot be read, which the tests would catch.
     """
     meta = Path(__file__).resolve().parents[2] / "metadata.json"
     try:
-        version = str(json.loads(meta.read_text(encoding="utf-8"))["KPlugin"]["Version"])
+        return str(json.loads(meta.read_text(encoding="utf-8"))["KPlugin"]["Version"])
     except (OSError, ValueError, KeyError, TypeError):
-        version = "unknown"
-    return f"ai-session-usage/{version}"
+        return "unknown"
 
 
 def emit(payload: dict) -> None:
@@ -83,25 +72,6 @@ def is_number(value: object) -> bool:
 def str_or(value: object, default: str | None) -> str | None:
     """Return ``value`` when it is a string, else ``default``."""
     return value if isinstance(value, str) else default
-
-
-def check_header_value(value: str, what: str, path: Path) -> str:
-    """
-    Return ``value`` stripped, or refuse it when it cannot be sent as an HTTP header value.
-
-    Args:
-        value: The token or id read from a login file.
-        what: Its name, for the message.
-        path: The file it came from, for the message.
-
-    Raises:
-        CredentialError: ``unreadable`` when the value has a character a header cannot carry;
-            http.client would echo the whole value, token included, in its error text.
-    """
-    value = value.strip()
-    if not (value.isascii() and value.isprintable() and " " not in value):
-        raise CredentialError("unreadable", f"{path}: {what} has an invalid character (length {len(value)})")
-    return value
 
 
 def iso_from_epoch(seconds: object) -> str | None:
@@ -143,66 +113,134 @@ def unique_ids(rows: list[dict]) -> list[dict]:
     return rows
 
 
-def is_expired(expires_ms: int | None) -> bool:
-    """Return True when a token expiry (epoch ms) is past or within the margin; None means unknown."""
-    return expires_ms is not None and expires_ms <= time.time() * 1000 + EXPIRY_MARGIN_MS
-
-
-class _NoRedirect(urllib.request.HTTPRedirectHandler):
-    """Refuse redirects: urllib would copy the Authorization header to the new host."""
-
-    def redirect_request(self, *args, **kwargs):  # noqa: D102
-        return None
-
-
-def retry_seconds(header: str) -> int | None:
+def find_program(command: str | None, name: str, fallbacks: tuple[Path, ...]) -> str | None:
     """
-    Read a ``Retry-After`` header (delta-seconds or an HTTP date) as seconds from now.
+    Find the CLI to run.
 
     Args:
-        header: The raw header value, possibly empty.
+        command: The user's setting (a path or a program name), or None to look for ``name``.
+        name: The program's name on the PATH.
+        fallbacks: Places its installers use, tried when the PATH has nothing (a desktop's PATH may lack
+            ``~/.local/bin``).
 
     Returns:
-        Whole seconds, between 0 and ``MAX_RETRY_S``; None when absent or unparseable.
+        Its path, or None when it cannot be found.
     """
-    header = header.strip()
-    if header.isascii() and header.isdigit():
-        return min(int(header), MAX_RETRY_S)
+    if command:
+        path = Path(os.path.expanduser(command))
+        if path.is_file() and os.access(path, os.X_OK):
+            return str(path)
+        return shutil.which(command)
+    found = shutil.which(name)
+    if found:
+        return found
+    for candidate in fallbacks:
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate)
+    return None
+
+
+@dataclass
+class CliRun:
+    """What came back from a CLI: the awaited answer, and everything else for an error message."""
+
+    answer: dict | None = None
+    lines: list[str] = field(default_factory=list)
+    stderr: str = ""
+    returncode: int | None = None
+    timed_out: bool = False
+
+    def tail(self) -> str:
+        """The last part of what the CLI said (stderr first), for an error message."""
+        return (self.stderr or "\n".join(self.lines)).strip()[-MAX_MESSAGE_CHARS:]
+
+
+def end_group(proc: subprocess.Popen) -> None:
+    """End the CLI and anything it started (a launcher script's real program), on either platform."""
     try:
-        when = parsedate_to_datetime(header)
-    except (TypeError, ValueError):
-        return None
-    return max(0, min(int(when.timestamp() - time.time()), MAX_RETRY_S))
+        if os.name == "posix":
+            os.killpg(proc.pid, signal.SIGKILL)
+        else:
+            subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True, check=False)
+    except OSError:  # already gone
+        pass
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        pass
 
 
-def get_json(url: str, headers: dict[str, str]) -> tuple[dict | None, dict | None]:
+def ask_cli(argv: list[str], requests: list[str], is_answer: Callable[[dict], bool], timeout_s: float,
+            close_stdin_first: bool) -> CliRun:
     """
-    GET ``url`` once and decode a JSON object.
+    Start a CLI in the temp folder, send it JSON lines, and read its JSON lines until one is the answer.
 
     Args:
-        url: The endpoint.
-        headers: Request headers (the token among them; already checked by ``check_header_value``).
+        argv: The program and its arguments.
+        requests: The lines to send; this function adds the newlines.
+        is_answer: ``is_answer(message)`` says whether a decoded line is the awaited one.
+        timeout_s: Bound on the whole run; past it the CLI's process group is ended.
+        close_stdin_first: Close stdin right after sending (Claude Code answers, then exits on the EOF);
+            otherwise stdin stays open until the answer arrives (Codex's server exits on EOF without answering)
+            and is closed then, on which the CLI is given ``EXIT_GRACE_S`` to exit by itself.
 
     Returns:
-        ``(body, None)`` on success, or ``(None, result)`` where ``result`` is the error object to emit.
+        The run; ``answer`` is None when the CLI exited or timed out without one.
+
+    Raises:
+        OSError: The program could not be started.
     """
-    request = urllib.request.Request(url, headers={**headers, "User-Agent": user_agent()})
-    opener = urllib.request.build_opener(_NoRedirect)
+    group = {"start_new_session": True} if os.name == "posix" else {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+    proc = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            text=True, encoding="utf-8", errors="replace", cwd=tempfile.gettempdir(), **group)
+    lines: Queue = Queue()
+    errors: list[str] = []
+
+    def pump_stdout() -> None:
+        for line in proc.stdout:
+            lines.put(line)
+        lines.put(None)  # EOF
+
+    threading.Thread(target=pump_stdout, daemon=True).start()
+    stderr_thread = threading.Thread(target=lambda: errors.append(proc.stderr.read()), daemon=True)
+    stderr_thread.start()
+    run = CliRun()
     try:
-        with opener.open(request, timeout=TIMEOUT_S) as response:
-            body = json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        if exc.code == 429:
-            return None, {"ok": False, "error": "ratelimited", "status": 429,
-                          "retry_after": retry_seconds(exc.headers.get("retry-after", ""))}
-        return None, {"ok": False, "error": "auth" if exc.code in (401, 403) else "http", "status": exc.code}
-    except http.client.HTTPException as exc:  # cut-short body, garbage status line
-        return None, {"ok": False, "error": "network", "message": type(exc).__name__}
-    except (urllib.error.URLError, OSError) as exc:  # TimeoutError is an OSError
-        reason = getattr(exc, "reason", exc)
-        return None, {"ok": False, "error": "network", "message": str(reason)[:MAX_MESSAGE_CHARS]}
-    except ValueError:  # bad JSON and bad UTF-8
-        return None, {"ok": False, "error": "badjson"}
-    if not isinstance(body, dict):
-        return None, {"ok": False, "error": "badjson"}
-    return body, None
+        proc.stdin.write("".join(request + "\n" for request in requests))
+        proc.stdin.flush()
+        if close_stdin_first:
+            proc.stdin.close()
+    except OSError:  # it exited at once; what it said is read below
+        pass
+    deadline = time.monotonic() + timeout_s
+    while run.answer is None:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            run.timed_out = True
+            break
+        try:
+            line = lines.get(timeout=min(remaining, 0.5))
+        except Empty:
+            continue
+        if line is None:  # EOF: the CLI is done talking
+            break
+        run.lines.append(line.rstrip("\n"))
+        try:
+            message = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(message, dict) and is_answer(message):
+            run.answer = message
+    if not close_stdin_first:
+        try:
+            proc.stdin.close()
+        except OSError:
+            pass
+    try:
+        proc.wait(timeout=0 if run.timed_out else EXIT_GRACE_S)
+    except subprocess.TimeoutExpired:
+        end_group(proc)
+    stderr_thread.join(timeout=1)
+    run.returncode = proc.returncode
+    run.stderr = errors[0] if errors else ""
+    return run

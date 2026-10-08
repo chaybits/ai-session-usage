@@ -32,7 +32,7 @@ PlasmoidItem {
           source: Plasmoid.configuration.claudeSource === "statusline" ? "statusline" : "claudecode",
           program: Plasmoid.configuration.claudeCommand },
         { id: "codex", name: i18n("ChatGPT"), cli: i18n("Codex"), show: Plasmoid.configuration.showCodex,
-          path: Plasmoid.configuration.codexAuthPath }
+          path: Plasmoid.configuration.codexAuthPath, program: Plasmoid.configuration.codexCommand }
     ].filter(p => p.show)
     // The UsageSource objects, one per enabled provider, in display order.
     property var sources: []
@@ -73,6 +73,7 @@ PlasmoidItem {
             credentialsPath: modelData.path
             dataSource: modelData.source || ""
             program: modelData.program || ""
+            programOption: modelData.id === "claude" ? "--claude" : "--codex"
             scriptPath: root.scriptPath
             // a local file costs no request, so it is read often; Claude Code and the ChatGPT endpoint are asked at
             // the user's interval
@@ -181,10 +182,10 @@ PlasmoidItem {
         case "nologin":
             problem = i18n("No %1 subscription login found", source.cliName)
             break
-        case "noclaude":
+        case "nocli":
             problem = i18n("%1 not found: install it, or set its program in the settings (General)", source.cliName)
             break
-        case "claudecode":
+        case "cli":
             problem = i18n("%1 could not tell the usage: %2", source.cliName, info.message || "")
             break
         case "nostatusline":
@@ -198,7 +199,7 @@ PlasmoidItem {
             problem = i18n("No answer from the helper; will retry")
             break
         case "format":
-            problem = i18n("Unexpected answer; the endpoint may have changed")
+            problem = i18n("Unexpected answer; %1 may have changed what it reports", source.cliName)
             break
         default:
             problem = i18n("Error: %1 %2", source.errorKind, info.message || info.status || "")

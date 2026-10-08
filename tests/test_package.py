@@ -57,6 +57,16 @@ class TestBuild(unittest.TestCase):
         self.assertEqual(self.plasmoid.name, f"ai-session-usage-{version}.plasmoid")
         self.assertEqual(self.checksum.name, f"{self.plasmoid.name}.sha256")
 
+    def test_metadata_fills_plasma_about_page(self) -> None:
+        # Plasma's settings dialog has an About page (AboutPlugin.qml) fed from metadata.json: the website and
+        # bug-report links, the authors and the copyright line; empty fields make an empty page
+        plugin = json.loads((SRC / "metadata.json").read_text(encoding="utf-8"))["KPlugin"]
+        self.assertTrue(plugin.get("Website", "").startswith("https://"), plugin.get("Website"))
+        self.assertTrue(plugin.get("BugReportUrl", "").startswith("https://"), plugin.get("BugReportUrl"))
+        self.assertTrue(plugin.get("Authors") and plugin["Authors"][0].get("Name"), plugin.get("Authors"))
+        self.assertTrue(plugin.get("Copyright"), "a copyright line")
+        self.assertEqual(plugin.get("License"), "GPL-3.0-or-later")
+
     def test_holds_exactly_the_package_files_with_metadata_at_the_root(self) -> None:
         with zipfile.ZipFile(self.plasmoid) as archive:
             names = sorted(archive.namelist())

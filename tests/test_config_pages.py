@@ -225,6 +225,7 @@ GENERAL_STEPS = [
         const program = () => harness.find(page.item, i => i.placeholderText === "claude, found on the PATH")
         results.atStart = [page.item.cfg_claudeSource, program().visible, snippet().visible]
         results.sources = harness.findAll(page.item, i => i.autoExclusive === true && i.text !== undefined, []).map(r => r.text)
+        results.codexProgram = !!harness.find(page.item, i => i.placeholderText === "codex, found on the PATH")
         harness.click(harness.find(page.item, i => i.text === "Claude Code's status line (no login is read; 5-hour and weekly only)"))
         return () => {
             results.afterStatusLine = [page.item.cfg_claudeSource, program().visible, snippet().visible]
@@ -244,7 +245,7 @@ SCENARIOS: dict[str, dict] = {
     "general": dict(page="configGeneral.qml", height=640, steps=GENERAL_STEPS, props={
         "cfg_refreshMinutes": 5, "cfg_showClaude": True, "cfg_claudeSource": "claudecode", "cfg_claudeCommand": "",
         "cfg_credentialsPath": "",
-        "cfg_showCodex": True, "cfg_codexAuthPath": ""}),
+        "cfg_showCodex": True, "cfg_codexCommand": "", "cfg_codexAuthPath": ""}),
 }
 
 
@@ -310,6 +311,7 @@ class TestConfigPages(unittest.TestCase):
         self.assertEqual(r["sources"], ["Claude Code itself (asked for its usage; no login is read here)",
                                         "Claude Code's status line (no login is read; 5-hour and weekly only)"],
                          "the two sources, and no usage endpoint (D18)")
+        self.assertTrue(r["codexProgram"], "the Codex program field (D20)")
         self.assertEqual(r["afterStatusLine"], ["statusline", False, True], "the status line: its snippet shown")
         snippet = json.loads(r["snippet"])
         self.assertEqual(snippet["statusLine"]["type"], "command")

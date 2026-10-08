@@ -130,7 +130,7 @@ class TestClaudeCodeSource(Sandbox):
         self.login()
         self.fake.unlink()
         r = self.helper()
-        self.assertEqual((r["error"], r["message"]), ("noclaude", "claude"))
+        self.assertEqual((r["error"], r["message"]), ("nocli", "claude"))
 
     def test_the_program_setting_is_used(self) -> None:
         self.login()
@@ -138,21 +138,21 @@ class TestClaudeCodeSource(Sandbox):
         other.parent.mkdir()
         self.fake.rename(other)
         self.assertTrue(self.helper("--claude", str(other))["ok"])
-        self.assertEqual(self.helper("--claude", str(self.dir / "nope"))["error"], "noclaude")
+        self.assertEqual(self.helper("--claude", str(self.dir / "nope"))["error"], "nocli")
 
     def test_an_error_answer_is_shown(self) -> None:
         self.login()
         r = self.helper(mode="error")
-        self.assertEqual((r["error"], r["message"]), ("claudecode", "Not logged in"))
+        self.assertEqual((r["error"], r["message"]), ("cli", "Not logged in"))
 
     def test_an_answer_to_another_request_is_not_taken(self) -> None:
         self.login()
-        self.assertEqual(self.helper(mode="other-id")["error"], "claudecode")
+        self.assertEqual(self.helper(mode="other-id")["error"], "cli")
 
     def test_output_that_is_not_the_protocol_names_the_failure(self) -> None:
         self.login()
         r = self.helper(mode="garbage")
-        self.assertEqual(r["error"], "claudecode")
+        self.assertEqual(r["error"], "cli")
         self.assertRegex(r["message"], r"^exit 3: Error: something broke$")
 
     def test_no_subscription_means_no_limits(self) -> None:
@@ -180,7 +180,7 @@ class TestClaudeCodeSource(Sandbox):
         os.environ.update(dict(self.env, FAKE_CLAUDE_MODE="hang"))
         started = time.time()
         r = usage_claudecode.run(self.dir / "home/.claude/.credentials.json", str(self.fake))
-        self.assertEqual(r["error"], "claudecode")
+        self.assertEqual(r["error"], "cli")
         self.assertLess(time.time() - started, 10)
 
 

@@ -31,7 +31,11 @@
       <default>true</default>
     </entry>
     <entry name="codexAuthPath" type="String">
-      <label>Codex login file; empty means $CODEX_HOME/auth.json or ~/.codex/auth.json</label>
+      <label>Codex login file, only checked to exist (with none the provider is left out); empty means $CODEX_HOME/auth.json or ~/.codex/auth.json</label>
+      <default></default>
+    </entry>
+    <entry name="codexCommand" type="String">
+      <label>The Codex program, asked for its usage over its app server; empty means codex on the PATH (or ~/.local/bin/codex)</label>
       <default></default>
     </entry>
   </group>

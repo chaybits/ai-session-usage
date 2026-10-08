@@ -16,6 +16,8 @@ KCM.SimpleKCM {
     property alias cfg_showClaude: showClaude.checked
     property alias cfg_credentialsPath: credentialsField.text
     property alias cfg_showCodex: showCodex.checked
+    property alias cfg_codexCommand: codexCommandField.text
+    property string cfg_codexCommandDefault
     property alias cfg_codexAuthPath: codexField.text
     property int cfg_refreshMinutesDefault
     property bool cfg_showClaudeDefault
@@ -95,7 +97,13 @@ KCM.SimpleKCM {
         }
         QQC2.CheckBox {
             id: showCodex
-            text: i18n("Show the ChatGPT (Codex) limits")
+            text: i18n("Show the ChatGPT (Codex) limits (Codex itself is asked; no login is read here)")
+        }
+        QQC2.TextField {
+            id: codexCommandField
+            Kirigami.FormData.label: i18n("Codex program:")
+            enabled: showCodex.checked
+            placeholderText: i18n("codex, found on the PATH")
         }
         QQC2.TextField {
             id: codexField
@@ -108,10 +116,9 @@ KCM.SimpleKCM {
             Layout.maximumWidth: Kirigami.Units.gridUnit * 20
             wrapMode: Text.WordWrap
             font: Kirigami.Theme.smallFont
-            text: i18n("Claude Code's login file is only checked to exist, so that someone without Claude Code sees "
-                       + "no Claude section; the widget never reads it. The ChatGPT login file is read for its access "
-                       + "token, which is never refreshed here: Codex refreshes its own whenever it runs. A provider "
-                       + "with no login file is left out of the widget.")
+            text: i18n("Neither login file is read: each is only checked to exist, so that someone without that program "
+                       + "sees no section for it. Claude Code and Codex are asked for their own usage and use their own "
+                       + "logins. A provider with no login file is left out of the widget.")
         }
     }
 }
