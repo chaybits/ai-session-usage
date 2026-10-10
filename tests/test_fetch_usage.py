@@ -8,8 +8,11 @@ PATH with HOME in the sandbox (the real one is also looked for under ~/.local/bi
 """
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -92,11 +95,33 @@ class TestCommon(unittest.TestCase):
             usage_common.emit({"ok": True, "x": float("nan")})
 
     def test_turkish_text_survives_the_ascii_output(self) -> None:
-        # emit writes pure ASCII (the widget's JSON.parse reads the escapes); the label must come back whole
+        # emit writes pure ASCII (the widget's JSON.parse reads the escapes); a row's label must come back whole
+        # through the helper's own row constructor and printer, not through the standard library alone
         label = "Haftalık (Şiir ğüş ıİ öç)"
-        line = json.dumps({"label": label}, ensure_ascii=True)
-        self.assertTrue(line.isascii())
-        self.assertEqual(json.loads(line)["label"], label)
+        row = usage_common.make_row("claude", "weekly_scoped:Şiir", "weekly_scoped", "weekly", label, 7, None)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit) as stop:
+            usage_common.emit({"ok": True, "rows": [row]})
+        self.assertEqual(stop.exception.code, 0)
+        line = out.getvalue()
+        self.assertTrue(line.isascii(), line)
+        self.assertEqual(line.count("\n"), 1, "one line")
+        self.assertEqual(json.loads(line)["rows"][0]["label"], label)
+        self.assertEqual(json.loads(line)["rows"][0]["id"], "claude:weekly_scoped:Şiir")
+
+    def test_package_version_is_found_in_the_skin_layout_too(self) -> None:
+        # the Rainmeter package carries the helper under @Resources/code/ with no metadata.json two levels up:
+        # the version Codex is told must still be the real one
+        skin_code = Path(tempfile.mkdtemp(prefix="cu-skin-code-")) / "Skins/X/@Resources/code"
+        skin_code.mkdir(parents=True)
+        self.addCleanup(shutil.rmtree, skin_code.parents[3], ignore_errors=True)
+        for py in CODE.glob("*.py"):
+            shutil.copy(py, skin_code / py.name)
+        shutil.copy(PKG / "metadata.json", skin_code / "metadata.json")
+        code = f"import sys; sys.path.insert(0, {str(skin_code)!r}); import usage_common; print(usage_common.package_version())"
+        done = subprocess.run([sys.executable, "-B", "-I", "-c", code], capture_output=True, text=True, timeout=30)
+        version = json.loads((PKG / "metadata.json").read_text(encoding="utf-8"))["KPlugin"]["Version"]
+        self.assertEqual((done.returncode, done.stdout.strip()), (0, version), done.stderr)
 
     def test_package_version_is_the_one_in_metadata(self) -> None:
         version = json.loads((PKG / "metadata.json").read_text(encoding="utf-8"))["KPlugin"]["Version"]

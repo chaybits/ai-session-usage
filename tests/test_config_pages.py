@@ -242,7 +242,7 @@ SCENARIOS: dict[str, dict] = {
         "cfg_warnColor": "#f67400", "cfg_criticalColor": "#abcdef"}),
     "rows": dict(page="configRows.qml", height=420, steps=ROWS_STEPS, props={
         "cfg_hiddenRows": [], "cfg_rowOrder": [], "cfg_knownRows": '[{"id": "codex:primary", "provider": "codex", "label": "Session (5hr)"}, {"id": "claude:session", "provider": "claude", "label": "Session (5hr)"}, {"id": "claude:weekly_all", "provider": "claude", "label": "Weekly (7 day)"}, {"id": "claude:weekly_scoped:Fable", "provider": "claude", "label": "Weekly (Fable)"}, {"id": "codex:secondary", "provider": "codex", "label": "Weekly (7 day)"}]'}),
-    "general": dict(page="configGeneral.qml", height=640, steps=GENERAL_STEPS, props={
+    "general": dict(page="configGeneral.qml", height=640, steps=GENERAL_STEPS, space_in_path=True, props={
         "cfg_refreshMinutes": 5, "cfg_showClaude": True, "cfg_claudeSource": "claudecode", "cfg_claudeCommand": "",
         "cfg_credentialsPath": "",
         "cfg_showCodex": True, "cfg_codexCommand": "", "cfg_codexAuthPath": ""}),
@@ -257,7 +257,13 @@ def run_page(base: Path, name: str, spec: dict) -> dict:
         (work / sub).mkdir()
     (work / "run").chmod(0o700)
     shot = json.dumps(str(Path(SHOTS) / f"page-{name}.png")) if SHOTS else "null"
-    harness = HARNESS % {"page": json.dumps((UI / spec["page"]).as_uri()), "props": json.dumps(spec["props"]),
+    page_dir = UI
+    if spec.get("space_in_path"):
+        # the General page's status-line snippet is pasted into a shell command: it must survive a folder with a
+        # space, which only a quoted path does (B-02)
+        page_dir = work / "it s a dir" / "contents" / "ui"
+        shutil.copytree(UI, page_dir)
+    harness = HARNESS % {"page": json.dumps((page_dir / spec["page"]).as_uri()), "props": json.dumps(spec["props"]),
                          "steps": ",\n".join(spec["steps"]), "shot": shot, "height": spec["height"]}
     (work / "harness.qml").write_text(harness, encoding="utf-8")
     env = {k: v for k, v in os.environ.items()
@@ -268,7 +274,7 @@ def run_page(base: Path, name: str, spec: dict) -> dict:
                QT_FORCE_STDERR_LOGGING="1", QML_DISABLE_DISK_CACHE="1", LANG="en_US.UTF-8", LC_ALL="en_US.UTF-8")
     try:
         proc = subprocess.run([QML, str(work / "harness.qml")], env=env, capture_output=True, text=True,
-                              timeout=DEADLINE_S)
+                              encoding="utf-8", errors="replace", timeout=DEADLINE_S)
         output = proc.stdout + proc.stderr
     except subprocess.TimeoutExpired as exc:
         # on a timeout Python hands back bytes even with text=True; keep what the page printed
@@ -315,7 +321,9 @@ class TestConfigPages(unittest.TestCase):
         self.assertEqual(r["afterStatusLine"], ["statusline", False, True], "the status line: its snippet shown")
         snippet = json.loads(r["snippet"])
         self.assertEqual(snippet["statusLine"]["type"], "command")
-        self.assertRegex(snippet["statusLine"]["command"], r"^python3 -B /\S+/contents/code/statusline_tap\.py$")
+        self.assertRegex(snippet["statusLine"]["command"],
+                         r"^python3 -B '/[^']*/it s a dir/contents/code/statusline_tap\.py'$",
+                         "the path quoted for the shell: a space in the home folder must not split the command")
 
     def test_rows_are_hidden_moved_and_reset(self) -> None:
         r = self.report("rows")

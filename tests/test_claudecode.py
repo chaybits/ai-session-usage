@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -65,17 +66,20 @@ class Sandbox(unittest.TestCase):
 
     def setUp(self) -> None:
         self.dir = Path(tempfile.mkdtemp(prefix="cu-claudecode-"))
-        self.addCleanup(lambda: subprocess.run(["rm", "-rf", str(self.dir)], check=False))
+        self.addCleanup(shutil.rmtree, self.dir, ignore_errors=True)
         self.bin = self.dir / "bin"
         self.bin.mkdir()
         self.fake = self.bin / "claude"
         self.fake.write_text(FAKE, encoding="utf-8")
         self.fake.chmod(0o755)
+        # the PATH holds only this folder, so a real claude installed on the machine can never be started by a
+        # test; the fake's "env python3" line needs python3 there
+        (self.bin / "python3").symlink_to(sys.executable)
         self.record = self.dir / "record.jsonl"
         (self.dir / "home/.claude").mkdir(parents=True)
         self.env = {k: v for k, v in os.environ.items() if k not in ("CLAUDE_CONFIG_DIR",)}
         self.env.update(HOME=str(self.dir / "home"), CLAUDE_CONFIG_DIR=str(self.dir / "home/.claude"),
-                        PATH=f"{self.bin}:/usr/bin:/bin", PYTHONDONTWRITEBYTECODE="1",
+                        PATH=str(self.bin), PYTHONDONTWRITEBYTECODE="1",
                         FAKE_CLAUDE_RECORD=str(self.record), FAKE_CLAUDE_ANSWER=json.dumps(ANSWER))
 
     def login(self) -> None:
@@ -161,18 +165,27 @@ class TestClaudeCodeSource(Sandbox):
         self.env["FAKE_CLAUDE_ANSWER"] = json.dumps({"rate_limits_available": False, "rate_limits": None})
         self.assertEqual(self.helper()["error"], "nologin")
 
+    def test_an_answer_without_rate_limits_is_an_unexpected_answer(self) -> None:
+        # a shape change (the key renamed, say) must read "Unexpected answer", not hide the section as "no login"
+        self.login()
+        self.env["FAKE_CLAUDE_ANSWER"] = json.dumps({"rate_limits_available": True, "limits_v2": {}})
+        r = self.helper()
+        self.assertEqual(r["error"], "format", r)
+
     def test_without_a_limits_list_the_classic_windows_are_used(self) -> None:
         self.login()
         self.env["FAKE_CLAUDE_ANSWER"] = json.dumps({"rate_limits_available": True, "rate_limits": {
             "five_hour": {"utilization": 10, "resets_at": RESET}, "seven_day": {"utilization": 20, "resets_at": RESET}}})
         r = self.helper()
-        self.assertEqual([(x["id"], x["percent"]) for x in r["rows"]], [("claude:five_hour", 10.0), ("claude:seven_day", 20.0)])
+        # the same ids as the limits list and the status line give, so a hidden or moved row stays that row
+        self.assertEqual([(x["id"], x["percent"]) for x in r["rows"]], [("claude:session", 10.0), ("claude:weekly_all", 20.0)])
 
     def test_a_hanging_claude_code_is_cut_off(self) -> None:
         # in-process, with a short bound, so the test does not wait the full 40 s
         self.login()
         sys.path.insert(0, str(CODE))
         self.addCleanup(sys.path.remove, str(CODE))
+        sys.dont_write_bytecode = True  # an in-process import must not leave a __pycache__ in the package (D17)
         import usage_claudecode
         saved = (usage_claudecode.TIMEOUT_S, dict(os.environ))
         self.addCleanup(lambda: (setattr(usage_claudecode, "TIMEOUT_S", saved[0]), os.environ.clear(), os.environ.update(saved[1])))

@@ -19,6 +19,9 @@ local MESSAGES = {
     badoutput = "The helper gave no usable answer: %s",
     usage = "The helper refused its arguments: %s",
 }
+-- What a message's placeholder takes: the CLI's name (the default for the messages above), the helper's own
+-- message, both in that order, or nothing. A kind with no message of its own shows the helper's text.
+local MESSAGE_ARGS = { cli = "both", unreadable = "message", badoutput = "message", usage = "message", timeout = "none" }
 
 local state = {}      -- provider id -> the last answer: { ok, rows, error, message, at }
 local last_good = {}  -- provider id -> the last good answer, kept dimmed under an error
@@ -197,7 +200,7 @@ local function parse_answer(text)
     if not ok or type(parsed) ~= "table" then
         return { ok = false, error = "badoutput", message = (text or ""):sub(-160) }
     end
-    if parsed.ok == true and type(parsed.rows) == "table" and #parsed.rows > 0 then
+    if parsed.ok == true and type(parsed.rows) == "table" then
         local rows = {}
         for _, r in ipairs(parsed.rows) do
             if type(r) == "table" and type(r.percent) == "number" then
@@ -205,7 +208,11 @@ local function parse_answer(text)
                                     resets_at = type(r.resets_at) == "string" and r.resets_at or nil }
             end
         end
-        if #rows > 0 then return { ok = true, rows = rows } end
+        if #rows > 0 then
+            -- the status-line source says when Claude Code saw the numbers: that is their age, not the read time
+            return { ok = true, rows = rows,
+                     captured_at = type(parsed.captured_at) == "number" and parsed.captured_at or nil }
+        end
         return { ok = false, error = "badoutput", message = "no rows" }
     end
     return { ok = false, error = type(parsed.error) == "string" and parsed.error or "unknown",
@@ -228,9 +235,16 @@ local function helper_parameter(provider)
 end
 
 -- ---- the layout: which meters show, where, with what ---------------------------------------------------------
+-- The number the card prints for a percentage (the helper may pass a fraction).
+local function shown_percent(percent)
+    return math.floor(percent + 0.5)
+end
+
+-- Judged on the number printed, so a row reading "95%" wears 95's colour (the Plasma widget does the same).
 local function level_color(percent, warn, critical)
-    if critical > 0 and percent >= critical then return RM.var("CriticalColor", "218,68,83") end
-    if warn > 0 and percent >= warn then return RM.var("WarnColor", "246,116,0") end
+    local shown = shown_percent(percent)
+    if critical > 0 and shown >= critical then return RM.var("CriticalColor", "218,68,83") end
+    if warn > 0 and shown >= warn then return RM.var("WarnColor", "246,116,0") end
     return RM.var("AccentColor", "61,174,233")
 end
 
@@ -265,19 +279,27 @@ function Layout(now, heights)
                 local n = "Row" .. row_i
                 local color = level_color(r.percent, warn, critical)
                 local pct_color = stale and stale_color or color
-                out[#out + 1] = { "row", n, y, r.label, string.format("%d%%", math.floor(r.percent + 0.5)),
+                out[#out + 1] = { "row", n, y, r.label, string.format("%d%%", shown_percent(r.percent)),
                                   math.max(0, math.min(100, r.percent)), color, pct_color,
                                   reset_text(r.resets_at, now), dimmed and dim or text_color, dimmed }
                 y = y + row_h
             end
             if not ans.ok then
-                local fmt = MESSAGES[ans.error] or ("Error: " .. tostring(ans.error) .. " %s")
-                local status = string.format(fmt, p.cli, ans.message or "")
-                if ans.error == "nologin" then status = string.format(fmt, p.cli) end
+                local fmt = MESSAGES[ans.error]
+                local take = MESSAGE_ARGS[ans.error] or (fmt and "cli" or "message")
+                fmt = fmt or ("Error: " .. tostring(ans.error) .. " %s")
+                local status
+                if take == "both" then status = string.format(fmt, p.cli, ans.message or "")
+                elseif take == "message" then status = string.format(fmt, ans.message or "")
+                elseif take == "none" then status = fmt
+                else status = string.format(fmt, p.cli) end
                 out[#out + 1] = { "status", "Status" .. si, y, status }
                 -- the message wraps (ClipString=2): Render passes the height Rainmeter measured, one line is 14
                 local h = heights and heights["Status" .. si] or 14
                 y = y + math.max(18, h + 4)
+            else
+                -- a provider that recovered: its message must go, or it stays on screen beside the live rows
+                out[#out + 1] = { "hide", "Status" .. si }
             end
             if at and (not oldest or at < oldest) then oldest = at end
             y = y + 6
@@ -295,7 +317,8 @@ function Layout(now, heights)
     elseif oldest then
         footer = "Updated " .. os.date("%H:%M", oldest) .. " " .. string.char(0xC2, 0xB7) .. " click to refresh"
     else
-        footer = "Waiting for the first answer"
+        -- every shown provider has answered, only with errors: what the Plasma widget says here
+        footer = "Click to refresh"
     end
     out[#out + 1] = { "footer", y, footer }
     out[#out + 1] = { "bottom", y + 22 }
@@ -383,7 +406,7 @@ function Answer(provider_id)
     if not provider then return end
     local ans = parse_answer(RM.measure_string(provider.measure))
     if ans.ok then
-        ans.at = os.time()
+        ans.at = ans.captured_at or os.time()
         last_good[provider_id] = ans
     end
     state[provider_id] = ans
@@ -394,7 +417,7 @@ end
 function TestAnswer(provider_id, text, at)
     local ans = parse_answer(text)
     if ans.ok then
-        ans.at = at
+        ans.at = ans.captured_at or at
         last_good[provider_id] = ans
     end
     state[provider_id] = ans

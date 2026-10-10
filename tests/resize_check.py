@@ -43,10 +43,16 @@ COMMON = """
         return item.mapToItem(null, item.width / 2, item.height / 2)
     }
     function __grab(name, then) {
-        __container().grabToImage(r => {
+        // grabToImage answers false (and never calls back) for an item with no size or no window: say so and go
+        // on, or the script waits for the callback until the deadline
+        const started = __container().grabToImage(r => {
             r.saveToFile(%(out)s + "/" + name + ".png")
             then()
         })
+        if (!started) {
+            console.log("CU-ERROR grab refused: " + name)
+            then()
+        }
     }
     function __state() {
         const c = __container(), f = root.fullRepresentationItem
@@ -245,6 +251,16 @@ def sharpness(path: Path) -> float:
     return round(float(edges.mean()), 2) if edges.size else 0.0
 
 
+def missing_packages() -> str | None:
+    """The Python package the comparisons need but the harness's own check does not cover, or None."""
+    for name in ("PIL", "numpy"):
+        try:
+            __import__(name)
+        except ImportError:
+            return f"python package {name} (pillow or numpy) is not installed"
+    return None
+
+
 def main() -> int:
     """Run the drag, the references and the render types; print the summary."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
@@ -256,7 +272,7 @@ def main() -> int:
     parser.add_argument("--grow-y", type=int, default=128, help="how far down the corner is dragged, logical px")
     parser.add_argument("--big", default="800x512", help="size of the render-type comparison, WxH logical px")
     args = parser.parse_args()
-    why_not = sh.missing()
+    why_not = sh.missing() or missing_packages()
     if why_not:
         print(f"SKIPPED: {why_not}")
         return 0
@@ -264,10 +280,13 @@ def main() -> int:
     out.mkdir(parents=True, exist_ok=True)
     marks = {"out": json.dumps(str(out)), "steps": args.steps, "grow_x": args.grow_x, "grow_y": args.grow_y}
     summary: dict = {"out": str(out)}
+    problems: list[str] = []  # what went wrong, so the exit code says so (a run that drew nothing is not a pass)
 
     drag = run(out, "drag", START, DRAG % marks, "RESIZE", args.scale)
     entries = drag.get("log") if isinstance(drag.get("log"), list) else []
     summary["drag"] = entries or drag
+    if not entries:
+        problems.append(f"drag: {drag.get('error', 'no log')}")
     states = {e["step"]: e["state"] for e in entries}
     after = states.get("20-after")
     # every mid-drag frame against a fresh widget of the same size, also in edit mode
@@ -280,14 +299,20 @@ def main() -> int:
         ref = run(out, f"held-{n}", (x, y, w, h), FRESH % dict(marks, edit="true", name=json.dumps(name)), "FRESH",
                   args.scale)
         summary[f"held_reference_{n}"] = ref.get("log", ref)
-        if (out / f"{name}.png").exists():
-            summary[f"mid_drag_{n}_vs_fresh_in_edit_mode"] = compare(out / f"10-drag-{n}.png", out / f"{name}.png")
+        pair = (out / f"10-drag-{n}.png", out / f"{name}.png")
+        if all(p.exists() for p in pair):
+            summary[f"mid_drag_{n}_vs_fresh_in_edit_mode"] = compare(*pair)
+        else:
+            problems.append(f"missing screenshot: {[p.name for p in pair if not p.exists()]}")
     if after:
         x, y, w, h = (round(v) for v in after["container"])
         ref = run(out, "fresh", (x, y, w, h), FRESH % dict(marks, edit="false", name=json.dumps("31-fresh")), "FRESH", args.scale)
         summary["fresh_reference"] = ref.get("log", ref)
-        if (out / "31-fresh.png").exists():
-            summary["after_drag_vs_fresh"] = compare(out / "20-after.png", out / "31-fresh.png")
+        pair = (out / "20-after.png", out / "31-fresh.png")
+        if all(p.exists() for p in pair):
+            summary["after_drag_vs_fresh"] = compare(*pair)
+        else:
+            problems.append(f"missing screenshot: {[p.name for p in pair if not p.exists()]}")
 
     bw, bh = (int(v) for v in args.big.split("x"))
     big = (START[0], START[1], bw, bh)
@@ -301,12 +326,15 @@ def main() -> int:
         if (out / f"{name}.png").exists():
             shots.append((kind, out / f"{name}.png"))
             summary[f"sharpness_{kind.split()[0]}"] = sharpness(out / f"{name}.png")
+        else:
+            problems.append(f"render {kind}: {ref.get('error', 'no picture')}")
     if shots:
         side_by_side(shots, out / "compare-render.png")
     for png in sorted(out.glob("[0-9]*.png")):
         enlarge(png, out / f"zoom-{png.stem}.png")
+    summary["problems"] = problems
     print(json.dumps(summary, indent=1))
-    return 0
+    return 1 if problems else 0
 
 
 if __name__ == "__main__":

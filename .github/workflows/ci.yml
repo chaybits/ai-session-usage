@@ -25,5 +25,7 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: lts/*
+      - name: Lua 5.1 (the Rainmeter skin's script is tested under it; without it that suite only skips)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq lua5.1
       - name: Tests
         run: bash tests/run_all.sh

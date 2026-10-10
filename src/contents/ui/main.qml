@@ -9,9 +9,9 @@ import "UsageLogic.js" as Logic
 
 // AI Session Usage: the subscription limits of Claude Code (session, weekly, per-model weekly) and of ChatGPT's
 // Codex (its plan's windows), in the servers' order, each polled every few minutes by
-// contents/code/fetch_usage.py. Click anywhere to refresh. Claude Code is asked for its own usage (its login is
-// never read here); for ChatGPT the helper reads only Codex's access token and never refreshes it (see its
-// docstring for why).
+// contents/code/fetch_usage.py. Click anywhere to refresh. Each CLI is asked for its own usage, with its own
+// login, over its own protocol (Claude Code headless, or its status line; Codex's app server): the widget
+// reads no login and talks to no server (docs/ARCHITECTURE.md D16, D18, D20).
 PlasmoidItem {
     id: root
 
@@ -51,8 +51,7 @@ PlasmoidItem {
     preferredRepresentation: Plasmoid.formFactor === PlasmaCore.Types.Planar ? fullRepresentation : null
     Plasmoid.backgroundHints: PlasmaCore.Types.DefaultBackground | PlasmaCore.Types.ConfigurableBackground
     toolTipMainText: titleText()
-    toolTipSubText: layout.blocks.map(b => b.rows.map(e => (sections.length > 1 ? sections[e.section].source.providerName + " " : "")
-        + e.row.label + " " + Math.round(e.row.percent) + "%").join(" · ")).filter(t => t).join(" · ")
+    toolTipSubText: layout.blocks.map(b => b.rows.map(e => tooltipEntry(e)).join(" · ")).filter(t => t).join(" · ")
 
     Plasmoid.contextualActions: [
         PlasmaCore.Action {
@@ -75,8 +74,8 @@ PlasmoidItem {
             program: modelData.program || ""
             programOption: modelData.id === "claude" ? "--claude" : "--codex"
             scriptPath: root.scriptPath
-            // a local file costs no request, so it is read often; Claude Code and the ChatGPT endpoint are asked at
-            // the user's interval
+            // a local file costs no request, so it is read often; Claude Code and Codex are started at the user's
+            // interval
             pollMs: dataSource === "statusline" ? Math.min(root.pollMs, Logic.LOCAL_POLL_MS) : root.pollMs
             onAnswered: result => root.recordRows(result)
         }
@@ -124,6 +123,16 @@ PlasmoidItem {
         return Logic.isOutdated(source.lastSuccessMs, nowMs, staleMinutes)
     }
 
+    // One row of the tooltip: its service (when more than one shows), its label and the number the card prints.
+    function tooltipEntry(entry) {
+        const pct = i18nc("a used percentage", "%1%", Logic.displayPercent(entry.row.percent))
+        if (sections.length > 1) {
+            return i18nc("a service's name, one of its usage rows, its percentage", "%1 %2 %3",
+                         sections[entry.section].source.providerName, entry.row.label, pct)
+        }
+        return i18nc("a usage row, its percentage", "%1 %2", entry.row.label, pct)
+    }
+
     function titleText() {
         return sections.length === 1 ? i18n("%1 usage", sections[0].source.providerName) : i18n("AI session usage")
     }
@@ -166,19 +175,6 @@ PlasmoidItem {
         switch (source.errorKind) {
         case "":
             return source.busy && !source.usage ? i18n("Loading…") : ""
-        case "expired":
-            problem = i18n("Login token expired; it renews when %1 runs", source.cliName)
-            break
-        case "auth":
-            problem = i18n("Not authorised (HTTP %1); log in again in %2", info.status, source.cliName)
-            break
-        case "ratelimited":
-            // From the schedule, not the header: Logic.nextPoll waits at least one poll interval.
-            problem = i18n("Rate limited; will retry in %1 min", Math.max(1, Math.round(source.scheduledMs / 60000)))
-            break
-        case "network":
-            problem = i18n("Offline: %1", info.message || "")
-            break
         case "nologin":
             problem = i18n("No %1 subscription login found", source.cliName)
             break
@@ -202,7 +198,7 @@ PlasmoidItem {
             problem = i18n("Unexpected answer; %1 may have changed what it reports", source.cliName)
             break
         default:
-            problem = i18n("Error: %1 %2", source.errorKind, info.message || info.status || "")
+            problem = i18n("Error: %1 %2", source.errorKind, info.message || "")
         }
         return lastGood ? i18n("%1 · last good %2", problem, lastGood) : problem
     }
@@ -300,10 +296,10 @@ PlasmoidItem {
             onTriggered: Plasmoid.configuration.placedAtDesignSize = true
         }
         readonly property bool wantDesign: askDesign && !placed
-        Layout.minimumWidth: Kirigami.Units.gridUnit * 8
+        Layout.minimumWidth: Kirigami.Units.gridUnit * Logic.MIN_WIDTH_UNITS
         Layout.preferredWidth: !onDesktop || wantDesign ? baseWidth : Logic.preferredSize(baseWidth, width)
         // "Make the widget taller" asks Plasma for room for every row; the other modes need only a little.
-        Layout.minimumHeight: overflow === "grow" ? content.implicitHeight : Kirigami.Units.gridUnit * 4
+        Layout.minimumHeight: overflow === "grow" ? content.implicitHeight : Kirigami.Units.gridUnit * Logic.MIN_HEIGHT_UNITS
         Layout.preferredHeight: overflow === "grow" || !onDesktop ? content.implicitHeight
             : wantDesign ? baseHeight : Logic.preferredSize(baseHeight, height)
 
@@ -331,7 +327,7 @@ PlasmoidItem {
                 return
             }
             if (content.implicitHeight > scroll.height) {
-                growCeiling = Math.min(growCeiling, shrink - 0.005)
+                growCeiling = Math.min(growCeiling, shrink - Logic.CEILING_MARGIN)
             }
             const next = Logic.shrinkStep(shrink, scroll.height, content.implicitHeight, growCeiling)
             if (next !== shrink) {

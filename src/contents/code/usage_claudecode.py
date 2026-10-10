@@ -15,7 +15,7 @@ import time
 from pathlib import Path
 
 import usage_claude
-from usage_common import ask_cli, find_program, str_or
+from usage_common import MAX_MESSAGE_CHARS, ask_cli, find_program, str_or
 
 PROVIDER = "claude"
 # Bounds the whole Claude Code run (it takes about 2 s); the widget's watchdog (60 s) bounds the helper.
@@ -26,9 +26,13 @@ REQUEST_ID = "ai-session-usage"
 ARGS = ["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
         "--no-session-persistence", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
         "--settings", '{"disableAllHooks":true}', "--disable-slash-commands"]
-# Where Claude Code's installers put it, for a desktop whose PATH lacks ~/.local/bin (on Windows, claude.exe there).
-FALLBACKS = (Path.home() / ".local/bin/claude", Path.home() / ".claude/local/claude",
-             Path.home() / ".local/bin/claude.exe")
+
+
+def fallbacks() -> tuple[Path, ...]:
+    """Where Claude Code's installers put it, for a desktop whose PATH lacks ~/.local/bin (on Windows, claude.exe there)."""
+    # computed when asked, not at import: with no resolvable home folder the helper must still print its JSON line
+    home = Path.home()
+    return (home / ".local/bin/claude", home / ".claude/local/claude", home / ".local/bin/claude.exe")
 
 
 def is_our_answer(message: dict) -> bool:
@@ -54,7 +58,7 @@ def run(credentials: Path | None, command: str | None = None) -> dict:
     login = credentials or usage_claude.default_credentials()
     if not login.exists():
         return {"ok": False, "error": "nologin", "message": f"{login} not found"}
-    exe = find_program(command, "claude", FALLBACKS)
+    exe = find_program(command, "claude", fallbacks())
     if exe is None:
         return {"ok": False, "error": "nocli", "message": command or "claude"}
     request = json.dumps({"type": "control_request", "request_id": REQUEST_ID, "request": {"subtype": "get_usage"}})
@@ -68,14 +72,17 @@ def run(credentials: Path | None, command: str | None = None) -> dict:
         return {"ok": False, "error": "cli", "message": f"exit {done.returncode}: {done.tail()}".strip()}
     response = done.answer["response"]
     if response.get("subtype") != "success":
-        return {"ok": False, "error": "cli", "message": (str_or(response.get("error"), None) or "error")[:200]}
+        return {"ok": False, "error": "cli", "message": (str_or(response.get("error"), None) or "error")[:MAX_MESSAGE_CHARS]}
     body = response.get("response") if isinstance(response.get("response"), dict) else {}
-    limits = body.get("rate_limits")
-    if body.get("rate_limits_available") is False or not isinstance(limits, dict):
+    if body.get("rate_limits_available") is False:
         # logged in without a subscription (an API key): there are no subscription limits to show
         return {"ok": False, "error": "nologin", "message": "Claude Code reports no subscription limits"}
-    rows, shape = usage_claude.rows_from_body(limits)
+    limits = body.get("rate_limits")
+    if not isinstance(limits, dict):
+        # a shape change: it must read "Unexpected answer", never hide the section as "no login"
+        return {"ok": False, "error": "format", "message": "no rate_limits in Claude Code's answer"}
+    rows, _ = usage_claude.rows_from_body(limits)
     if not rows:
         return {"ok": False, "error": "format", "message": "no limits or usage windows in Claude Code's answer"}
-    return {"ok": True, "status": 200, "source": "claudecode", "shape": shape, "fetched_at": int(time.time()),
+    return {"ok": True, "source": "claudecode", "fetched_at": int(time.time()),
             "plan": str_or(body.get("subscription_type"), None), "rows": rows}

@@ -24,6 +24,8 @@ NAME = "ai-session-usage"
 ROOT = Path(__file__).resolve().parent.parent
 # The zip format's own epoch; one date for every entry is what makes two builds of one tree byte-identical.
 FIXED_TIME = (1980, 1, 1, 0, 0, 0)
+# zipfile stamps each entry with the system that writes it (0 on Windows): one value everywhere
+UNIX = 3
 # A plain file: the helper is always run as ``python3 <file>``, never executed directly.
 FILE_MODE = 0o644 << 16
 
@@ -55,7 +57,9 @@ def package_files(src: Path) -> list[Path]:
         SystemExit: A ``__pycache__`` folder or a ``.pyc`` file is in the tree (it would carry the build
             machine's paths), or ``metadata.json`` is missing at the root (Plasma would refuse the package).
     """
-    files = sorted(p for p in src.rglob("*") if p.is_file())
+    # sorted by the parts of the path inside the package, compared as strings: the same order on Linux and on
+    # Windows (a bare Path sort is case-insensitive there, and the entry order is part of the bytes)
+    files = sorted((p for p in src.rglob("*") if p.is_file()), key=lambda p: p.relative_to(src).parts)
     compiled = [p.relative_to(src).as_posix() for p in files if "__pycache__" in p.parts or p.suffix == ".pyc"]
     if compiled:
         raise SystemExit(f"refusing to pack compiled Python ({compiled[0]}): delete __pycache__ first")
@@ -75,8 +79,8 @@ def build(src: Path, out: Path) -> tuple[Path, Path]:
     Returns:
         ``(plasmoid, checksum)``: the package, and a one-line file in ``sha256sum -c`` form.
     """
+    files = package_files(src)  # first: its refusals are the clean messages; version_of would raise on an empty folder
     version = version_of(src)
-    files = package_files(src)
     out.mkdir(parents=True, exist_ok=True)
     target = out / f"{NAME}-{version}.plasmoid"
     with zipfile.ZipFile(target, "w") as archive:
@@ -84,6 +88,7 @@ def build(src: Path, out: Path) -> tuple[Path, Path]:
             info = zipfile.ZipInfo(path.relative_to(src).as_posix(), date_time=FIXED_TIME)
             info.compress_type = zipfile.ZIP_STORED  # a compressed stream is zlib-build specific; the package is small
             info.external_attr = FILE_MODE
+            info.create_system = UNIX
             archive.writestr(info, path.read_bytes())
     digest = hashlib.sha256(target.read_bytes()).hexdigest()
     checksum = out / f"{target.name}.sha256"

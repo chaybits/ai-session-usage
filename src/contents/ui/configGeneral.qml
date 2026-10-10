@@ -81,8 +81,9 @@ KCM.SimpleKCM {
             wrapMode: TextEdit.WrapAnywhere
             font.family: "monospace"
             font.pointSize: Kirigami.Theme.smallFont.pointSize
+            // quoted for the shell, as the card's own command is: a home folder with a space must not split it
             text: JSON.stringify({ statusLine: { type: "command", command: "python3 -B "
-                + Logic.scriptPath(Qt.resolvedUrl("../code/statusline_tap.py")) } })
+                + Logic.shellQuote(Logic.scriptPath(Qt.resolvedUrl("../code/statusline_tap.py"))) } })
         }
         QQC2.TextField {
             id: credentialsField

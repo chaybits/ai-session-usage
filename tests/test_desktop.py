@@ -155,7 +155,7 @@ SLOT_PROBE = """
             }
             tick++
             if (tick === 1 && %(fail)s) {
-                root.sources[1].handleOutput(JSON.stringify({ ok: false, error: "network", message: "no route" }), "")
+                root.sources[1].handleOutput(JSON.stringify({ ok: false, error: "cli", message: "no route" }), "")
             }
             if (tick === 1) {
                 %(then)s
@@ -244,7 +244,7 @@ class TestDesktopMouse(unittest.TestCase):
 
     def test_a_slot_the_user_set_keeps_its_size_when_the_card_grows(self) -> None:
         r = self.run_report("late-growth")
-        self.assertRegex(r["status"], "^Offline: no route", "the status line appeared")
+        self.assertRegex(r["status"], "could not tell the usage: no route", "the status line appeared")
         self.assertEqual(r["container"][2:], [GEOMETRY[2], GEOMETRY[3]], f"heights seen: {r['heights']}")
 
     def test_a_widget_just_added_opens_at_the_design_size(self) -> None:
@@ -255,7 +255,7 @@ class TestDesktopMouse(unittest.TestCase):
 
     def test_a_slot_smaller_than_the_design_size_is_kept(self) -> None:
         r = self.run_report("narrow")
-        self.assertRegex(r["status"], "^Offline: no route", "the status line appeared")
+        self.assertRegex(r["status"], "could not tell the usage: no route", "the status line appeared")
         self.assertEqual(r["container"][2:], [NARROW[2], NARROW[3]], f"heights seen: {r['heights']}, hints: {r['hints']}")
 
     def test_make_the_widget_taller_keeps_the_width_the_user_set(self) -> None:

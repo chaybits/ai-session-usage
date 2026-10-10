@@ -3,7 +3,7 @@
 
 Set it as Claude Code's status line, in ``~/.claude/settings.json``:
 
-    "statusLine": {"type": "command", "command": "python3 /path/to/statusline_tap.py"}
+    "statusLine": {"type": "command", "command": "python3 -B /path/to/statusline_tap.py"}
 
 Claude Code runs it with a JSON description of the session on stdin. This keeps **only** ``rate_limits``
 (the usage windows Claude Code received from the server) and the time it saw them, in a small file the widget
@@ -35,13 +35,13 @@ import usage_statusline as sl  # noqa: E402  (the helper modules sit beside this
 THEN_TIMEOUT_S = 5
 
 
-def summary(windows: dict) -> str:
+def summary(windows: dict, now: float) -> str:
     """The status bar's text: the 5-hour and weekly percentages ("5h 34% · 7d 61%"), or "" when unknown."""
     parts = []
     for key, short in (("five_hour", "5h"), ("seven_day", "7d")):
         w = windows.get(key)
         if isinstance(w, dict) and sl.is_number(w.get("used_percentage")):
-            parts.append(f"{short} {round(w['used_percentage'])}%")
+            parts.append(f"{short} {round(sl.effective_percent(w, now))}%")
     return " · ".join(parts)
 
 
@@ -58,7 +58,7 @@ def write_atomic(path: Path, data: dict) -> None:
         raise
 
 
-def record(raw: str, path: Path, now: float) -> dict:
+def record(raw: str, path: Path, now: float) -> tuple[dict, OSError | None]:
     """
     Keep the usage windows of one status-line input.
 
@@ -68,7 +68,8 @@ def record(raw: str, path: Path, now: float) -> dict:
         now: Unix seconds.
 
     Returns:
-        The windows now known (the file's, updated when the input carried any).
+        ``(windows, problem)``: the windows now known (the file's, updated when the input carried any), and the
+        error when the file could not be written, so the caller can still print the numbers it has.
     """
     try:
         previous = sl.read_file(path)["rate_limits"] if path.is_file() else {}
@@ -79,10 +80,13 @@ def record(raw: str, path: Path, now: float) -> dict:
     except (ValueError, AttributeError):
         incoming = None
     if not isinstance(incoming, dict) or not any(isinstance(w, dict) for w in incoming.values()):
-        return previous  # before the session's first answer there is nothing to keep
+        return previous, None  # before the session's first answer there is nothing to keep
     windows = sl.merge(previous, incoming, now)
-    write_atomic(path, {"captured_at": int(now), "rate_limits": windows})
-    return windows
+    try:
+        write_atomic(path, {"captured_at": int(now), "rate_limits": windows})
+    except OSError as exc:
+        return windows, exc
+    return windows, None
 
 
 def parse_args(argv: list[str]) -> tuple[bool, str | None]:
@@ -101,20 +105,24 @@ def parse_args(argv: list[str]) -> tuple[bool, str | None]:
 def main() -> None:
     """Record the windows, print the status bar's line, and run the --then command if given."""
     quiet, then = parse_args(sys.argv[1:])
-    raw = sys.stdin.read()
-    windows = {}
-    try:
-        windows = record(raw, sl.status_file(), time.time())
-    except OSError as exc:  # the file could not be written: the line is still printed
-        print(f"statusline_tap: {type(exc).__name__}", file=sys.stderr)
+    # Claude Code writes UTF-8. Read the bytes and say so: a text stdin is decoded in the locale's code page,
+    # which on a Windows machine (cp1254 on a Turkish one) cannot read a capital S-cedilla in the session's path.
+    raw_bytes = sys.stdin.buffer.read()
+    raw = raw_bytes.decode("utf-8", errors="replace")
+    now = time.time()
+    windows, problem = record(raw, sl.status_file(), now)
+    if problem is not None:  # the file could not be written: the line is still printed from the numbers in hand
+        print(f"statusline_tap: {type(problem).__name__}", file=sys.stderr)
     if not quiet:
-        line = summary(windows)
+        line = summary(windows, now)
         if line:
             print(line)
     if then:
         try:
-            done = subprocess.run(then, shell=True, input=raw, capture_output=True, text=True, timeout=THEN_TIMEOUT_S)
-            sys.stdout.write(done.stdout)
+            done = subprocess.run(then, shell=True, input=raw_bytes, capture_output=True, timeout=THEN_TIMEOUT_S)
+            sys.stdout.flush()
+            sys.stdout.buffer.write(done.stdout)  # the earlier command's bytes as they came, whatever the locale
+            sys.stdout.buffer.flush()
         except subprocess.TimeoutExpired:
             print("statusline_tap: --then timed out", file=sys.stderr)
 

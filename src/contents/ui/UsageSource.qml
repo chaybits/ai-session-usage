@@ -10,7 +10,7 @@ Item {
 
     required property string providerId     // "claude" or "codex", the helper's --provider
     required property string providerName   // shown in the widget
-    required property string cliName        // the program whose session refreshes the login
+    required property string cliName        // the program named in this provider's messages (Claude Code, Codex)
     required property string scriptPath
     property string credentialsPath: ""
     // Claude only: "claudecode" (ask Claude Code itself, headless; the default) or "statusline" (read what Claude
@@ -28,9 +28,9 @@ Item {
     property bool busy: false
     property double lastSuccessMs: 0
     property double lastAttemptMs: 0
-    // Current fast-retry step in ms after a network or server failure (0 = none), see Logic.nextPoll.
+    // Current fast-retry step in ms after a CLI gave no usable answer (0 = none), see Logic.nextPoll.
     property int retryStepMs: 0
-    // The poll interval actually scheduled (the rate-limit text reads it, so it never promises another time).
+    // The poll interval actually scheduled (the tests read it).
     readonly property int scheduledMs: pollTimer.interval
 
     signal answered(var result)
@@ -55,19 +55,24 @@ Item {
         onTriggered: source.refresh(false)
     }
 
-    // The helper's 15 s timeout bounds each network step, not the run (the DNS lookup is not covered,
-    // and a server sending a byte every few seconds never trips it); this bounds the run.
+    // The helper bounds its own CLI run (40 s for Claude Code, 30 s for Codex); this bounds a helper that never
+    // starts or never comes back (a saturated disk, a stuck launcher).
     Timer {
         id: watchdog
         interval: Logic.WATCHDOG_MS
         onTriggered: {
-            // Drop the orphaned source so it cannot linger (that also ends the helper), and say what happened.
+            // Drop the orphaned source so it cannot linger (that also ends the helper), say what happened, and
+            // retry soon: a helper that did not come back is a transient failure like a CLI that gave no answer.
             for (const name of runner.connectedSources.slice()) {
                 runner.disconnectSource(name)
             }
             source.busy = false
             source.errorKind = "timeout"
             source.errorInfo = ({})
+            const next = Logic.nextPoll({ ok: false, error: "timeout" }, source.retryStepMs, source.pollMs)
+            source.retryStepMs = next.step
+            pollTimer.interval = next.intervalMs
+            pollTimer.restart()
         }
     }
 
@@ -89,10 +94,6 @@ Item {
         refresh(false)
     }
 
-    function shellQuote(s) {
-        return "'" + String(s).replace(/'/g, "'\\''") + "'"
-    }
-
     function refresh(manual) {
         if (busy) {
             return
@@ -103,15 +104,15 @@ Item {
         busy = true
         lastAttemptMs = Date.now()
         // -B: no __pycache__ beside the helper (it would hold this machine's paths, and src/** ships whole)
-        let cmd = "python3 -B " + shellQuote(scriptPath) + " --provider " + shellQuote(providerId)
+        let cmd = "python3 -B " + Logic.shellQuote(scriptPath) + " --provider " + Logic.shellQuote(providerId)
         if (dataSource) {
             cmd += " --source " + dataSource
         }
         if (program && programOption) {
-            cmd += " " + programOption + " " + shellQuote(program)
+            cmd += " " + programOption + " " + Logic.shellQuote(program)
         }
         if (credentialsPath) {
-            cmd += " " + shellQuote(credentialsPath)
+            cmd += " " + Logic.shellQuote(credentialsPath)
         }
         watchdog.restart()
         // The trailing comment keeps every source name unique, so each run really executes.

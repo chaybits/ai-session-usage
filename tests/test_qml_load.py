@@ -273,10 +273,14 @@ SCENARIOS: dict[str, dict] = {
                                   env={"FAKE_CLAUDE_ANSWER": json.dumps(test_claudecode.ANSWER),
                                        "FAKE_CODEX_ANSWER": json.dumps(test_codex.ANSWER)}, record="record.jsonl"),
     "unreadable": dict(stub=stub("json.dumps({'ok': False, 'error': 'unreadable', 'message': '/x/c.json: JSONDecodeError'})")),
-    # a request's failures, with the default source (Claude Code asked; the status-line source makes no request)
-    "ratelimited-600": dict(stub=stub("json.dumps({'ok': False, 'error': 'ratelimited', 'status': 429, 'retry_after': 600})")),
-    "ratelimited-120": dict(stub=stub("json.dumps({'ok': False, 'error': 'ratelimited', 'status': 429, 'retry_after': 120})")),
-    "network": dict(stub=stub("json.dumps({'ok': False, 'error': 'network', 'message': 'name resolution failed'})")),
+    # the failures the helper reports since the CLIs are asked directly (D16, D20): the program not found, the CLI
+    # ran but gave no usable answer, a changed shape, and a login gone after a good answer
+    "nocli": dict(stub=stub("json.dumps({'ok': False, 'error': 'nocli', 'message': 'claude'})")),
+    "cli": dict(stub=stub("json.dumps({'ok': False, 'error': 'cli', 'message': 'exit 3: boom'})")),
+    "format": dict(stub=stub("json.dumps({'ok': False, 'error': 'format', 'message': 'no rate_limits'})")),
+    "nologin-after-success": dict(stub=stub(CLAUDE_OK),
+                                  script="root.sources[0].handleOutput(JSON.stringify({ ok: false, error: 'nologin', "
+                                         "message: 'gone' }), '')"),
     "both-providers-en": dict(stub=stub(CLAUDE_OK, CODEX_OK), locale="en_US.UTF-8"),
     "claude-only-tr": dict(stub=stub(CLAUDE_OK), locale="tr_TR.UTF-8"),
     "hidden-row": dict(stub=stub(CLAUDE_OK, CODEX_OK), defaults={"hiddenRows": "claude:weekly_scoped:Fable"}),
@@ -292,7 +296,7 @@ SCENARIOS: dict[str, dict] = {
     # ChatGPT's next fetch fails after a good one: its rows stay (dimmed) and its line follows the mixed list
     "mixed-order-error": dict(stub=stub(CLAUDE_OK, CODEX_OK), size=(400, 420),
                               defaults={"rowOrder": "claude:session,codex:primary,claude:weekly_all,codex:secondary"},
-                              script="root.sources[1].handleOutput(JSON.stringify({ ok: false, error: 'network', "
+                              script="root.sources[1].handleOutput(JSON.stringify({ ok: false, error: 'cli', "
                                      "message: 'no route' }), '')"),
     "compact-reordered": dict(stub=stub(CLAUDE_OK, CODEX_OK), force_compact=True,
                               defaults={"rowOrder": "codex:secondary,codex:primary,claude:weekly_all"}),
@@ -497,16 +501,23 @@ class TestQmlLoad(unittest.TestCase):
         self.assertEqual(self.source(self.probe("unreadable"), "claude")["status"],
                          "Cannot use the login file: /x/c.json: JSONDecodeError")
 
-    def test_rate_limit_text_matches_the_schedule(self) -> None:
-        s = self.source(self.probe("ratelimited-600"), "claude")
-        self.assertEqual((s["status"], s["interval"]), ("Rate limited; will retry in 10 min", 600000))
-        # a Retry-After shorter than the poll interval waits the interval, and says so
-        s = self.source(self.probe("ratelimited-120"), "claude")
-        self.assertEqual((s["status"], s["interval"]), ("Rate limited; will retry in 5 min", 300000))
+    def test_a_missing_program_says_where_to_set_it(self) -> None:
+        s = self.source(self.probe("nocli"), "claude")
+        self.assertEqual((s["status"], s["interval"]),
+                         ("Claude Code not found: install it, or set its program in the settings (General)", 300000))
 
-    def test_network_failure_retries_after_30_s(self) -> None:
-        s = self.source(self.probe("network"), "claude")
-        self.assertEqual((s["status"], s["interval"]), ("Offline: name resolution failed", 30000))
+    def test_a_cli_that_gave_no_answer_shows_its_message_and_retries_after_30_s(self) -> None:
+        s = self.source(self.probe("cli"), "claude")
+        self.assertEqual((s["status"], s["interval"]), ("Claude Code could not tell the usage: exit 3: boom", 30000))
+
+    def test_a_changed_shape_is_an_unexpected_answer(self) -> None:
+        s = self.source(self.probe("format"), "claude")
+        self.assertEqual(s["status"], "Unexpected answer; Claude Code may have changed what it reports")
+
+    def test_a_login_gone_after_a_good_answer_keeps_the_section_with_its_last_good_time(self) -> None:
+        p = self.probe("nologin-after-success")
+        self.assertEqual(p["sections"], ["claude"], "a section that once had numbers stays")
+        self.assertRegex(self.source(p, "claude")["status"], r"^No Claude Code subscription login found · last good \d{1,2}:\d{2}")
 
     def test_both_providers_in_one_card_en_us(self) -> None:
         p = self.probe("both-providers-en")
@@ -525,7 +536,7 @@ class TestQmlLoad(unittest.TestCase):
         # first-seen order depends on which helper answers first; the settings page sorts by service itself
         self.assertEqual(sorted(p["known"]), ["claude:session", "claude:weekly_all", "claude:weekly_scoped:Fable",
                                               "codex:primary", "codex:secondary"], "rows recorded for the settings page")
-        self.assertAlmostEqual(p["zoom"], 400 / (18 * 22), places=2, msg="the 400 px slot is about 100 %")
+        self.assertAlmostEqual(p["zoom"], 400 / (p["gridUnit"] * 22), places=2, msg="the 400 px slot is about 100 %")
 
     def test_turkish_locale_is_24_hour(self) -> None:
         p = self.probe("claude-only-tr")
@@ -604,7 +615,7 @@ class TestQmlLoad(unittest.TestCase):
         self.assertEqual(p["mixed"], True)
         self.assertEqual(len(p["titles"]), 5, "the failing service's rows stay, dimmed")
         self.assertEqual(len(p["statuses"]), 1, p["statuses"])
-        self.assertRegex(p["statuses"][0], r"^ChatGPT: Offline: no route · last good \d{1,2}:\d{2}")
+        self.assertRegex(p["statuses"][0], r"^ChatGPT: Codex could not tell the usage: no route · last good \d{1,2}:\d{2}")
 
     def test_the_panel_form_follows_the_order(self) -> None:
         texts = self.probe("compact-reordered")["compactTexts"]
@@ -617,7 +628,8 @@ class TestQmlLoad(unittest.TestCase):
         self.assertLess(scroll["minHeight"], scroll["contentHeight"], "scroll mode asks for little")
 
     def test_fit_to_width_zooms_with_the_width(self) -> None:
-        self.assertAlmostEqual(self.probe("wide")["zoom"], 800 / (18 * 22), places=2)
+        wide = self.probe("wide")
+        self.assertAlmostEqual(wide["zoom"], 800 / (wide["gridUnit"] * 22), places=2)
 
     def test_fixed_zoom_ignores_the_width(self) -> None:
         self.assertAlmostEqual(self.probe("fixed-zoom")["zoom"], 1.5, places=2)

@@ -27,7 +27,8 @@ def lua(*args: str, env: dict | None = None) -> str:
 
 
 def answer(provider: str, at: int, rows: list[dict], ok: bool = True, **extra: object) -> str:
-    body = {"ok": ok, "rows": rows} if ok else {"ok": False, **extra}
+    # the helper's shape: a flat error ("error": kind, "message": text), as fetch_usage.py prints it
+    body = {"ok": True, "rows": rows, **extra} if ok else {"ok": False, **extra}
     return f"answer:{provider}:{at}:{json.dumps(body)}"
 
 
@@ -129,6 +130,50 @@ class TestLayout(unittest.TestCase):
         self.assertEqual(rows[0][7], "253,188,75", "the percentage in the stale colour")
         self.assertEqual(rows[0][6], "61,174,233", "the bar keeps the level colour")
 
+    def test_status_line_numbers_are_as_old_as_claude_code_saw_them(self) -> None:
+        # the status-line source says when Claude Code saw the numbers (captured_at); that, not the read time, is
+        # their age: 20 minutes old is stale, and the footer names that time (the Plasma widget does the same)
+        items = layout(answer("claude", NOW, CLAUDE_ROWS, captured_at=NOW - 20 * 60, source="statusline"))
+        rows = [i for i in items if i[0] == "row"]
+        self.assertEqual(rows[0][7], "253,188,75", "stale, although just read")
+        footer = [i for i in items if i[0] == "footer"][0]
+        self.assertTrue(footer[2].startswith("Updated 11:33 \u00b7 click to refresh"), footer)
+
+    def test_an_error_message_carries_the_helpers_text_not_the_cli_name(self) -> None:
+        # one placeholder per message: for these kinds it takes the helper's message, and the CLI's name must not
+        # land in it ("The helper gave no usable answer: Claude Code" told the user nothing)
+        for kind, message, expected in (
+                ("badoutput", "tail of the output", "The helper gave no usable answer: tail of the output"),
+                ("usage", "unknown option --x", "The helper refused its arguments: unknown option --x"),
+                ("unreadable", "/x/claude-statusline.json: ValueError", "Cannot use the status file: /x/claude-statusline.json: ValueError"),
+                ("nocli", "claude", "Claude Code not found: install it, or set its program in the skin's variables"),
+                ("format", "no rate_limits", "Unexpected answer; Claude Code may have changed what it reports"),
+                ("timeout", "", "No answer from the helper; will retry"),
+                ("internal", "KeyError", "Error: internal KeyError")):
+            with self.subTest(kind=kind):
+                items = layout(answer("claude", NOW, [], ok=False, error=kind, message=message))
+                status = [i for i in items if i[0] == "status"][0]
+                self.assertEqual(status[3], expected)
+
+    def test_a_recovered_provider_hides_its_status_line(self) -> None:
+        # an error, then a good answer: the message must go, or it stays on screen beside the live rows
+        items = layout(answer("claude", NOW - 400, [], ok=False, error="cli", message="exit 3"),
+                       answer("claude", NOW, CLAUDE_ROWS))
+        self.assertEqual([i for i in items if i[0] == "status"], [], "no status line")
+        self.assertIn(["hide", "Status1"], items)
+        self.assertEqual(len([i for i in items if i[0] == "row"]), 3)
+
+    def test_an_answer_with_no_rows_is_a_bad_output(self) -> None:
+        status = [i for i in layout(answer("claude", NOW, [])) if i[0] == "status"][0]
+        self.assertEqual(status[3], "The helper gave no usable answer: no rows")
+
+    def test_the_level_follows_the_number_shown(self) -> None:
+        # 94.6 is shown as 95%: it wears 95's colour (the Plasma widget judges the printed number too)
+        rows = [i for i in layout(answer("claude", NOW, [{"id": "claude:session", "label": "Session (5hr)", "percent": 94.6, "resets_at": None},
+                                                        {"id": "claude:weekly_all", "label": "Weekly (7 day)", "percent": 79.6, "resets_at": None}])) if i[0] == "row"]
+        self.assertEqual([r[4] for r in rows], ["95%", "80%"])
+        self.assertEqual([r[6] for r in rows], ["218,68,83", "246,116,0"], "critical, warn")
+
     def test_nothing_yet_and_no_login_anywhere(self) -> None:
         self.assertEqual([i for i in layout() if i[0] == "footer"][0][2], "Loading")
         items = layout(answer("claude", NOW, [], ok=False, error="nologin", message="x"),
@@ -165,6 +210,12 @@ class TestRainmeterSide(unittest.TestCase):
             return int(ys[0])
 
         self.assertEqual(footer_y("var:h:Status2=30") - footer_y(), 16)
+
+    def test_errors_only_say_click_to_refresh_like_the_widget(self) -> None:
+        # Every shown provider answered, with an error, and none ever with numbers: the footer said "Waiting for the
+        # first answer", which had already come. The Plasma widget says "Click to refresh" here; so does the skin.
+        out = lua("answer", "mCodex", json.dumps({"ok": False, "error": "nocli", "message": ""})).splitlines()
+        self.assertIn("BANG\t!SetOption\tFooter\tText\tClick to refresh", out)
 
     def test_an_answer_sets_the_meters_and_redraws(self) -> None:
         out = lua("answer", "mClaude", json.dumps({"ok": True, "rows": CLAUDE_ROWS})).splitlines()

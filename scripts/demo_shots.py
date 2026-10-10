@@ -6,7 +6,7 @@ fixed rows, the clock frozen at FIXED_NOW (UTC, US English), and a gradient made
 third-party image, so the pictures carry no other licence). The desktop is grabbed and cropped around the
 widget; the pictures go to ``--out`` as ``NN-slug.png`` (Projects/CLAUDE.md O7), each checked against O8's ~500 KB.
 
-    python3 scripts/demo_shots.py [--out docs] [--scale 1.5] [--only 03-claude-reordered]
+    python3 scripts/demo_shots.py [--out docs] [--scale 1.5] [--only 04-claude-reordered]
 """
 from __future__ import annotations
 
@@ -55,12 +55,12 @@ def chatgpt(session: float, weekly: float) -> list[dict]:
 EXAMPLES: dict[str, dict] = {
     # numbered in the order the README shows them (O7); 05 is for store listings
     "01-claude-and-chatgpt": dict(claude=claude(34, 61, 18), codex=chatgpt(22, 47), size=(400, 384)),
-    "02-mixed-order": dict(claude=claude(34, 61, 18), codex=chatgpt(22, 47), size=(400, 384),
+    "03-mixed-order": dict(claude=claude(34, 61, 18), codex=chatgpt(22, 47), size=(400, 384),
                            defaults={"rowOrder": "claude:session,codex:primary,claude:weekly_all,codex:secondary"}),
-    "03-claude-reordered": dict(claude=claude(34, 61, 18), size=(400, 240),
+    "04-claude-reordered": dict(claude=claude(34, 61, 18), size=(400, 240),
                                 defaults={"rowOrder": "claude:weekly_scoped:Fable,claude:weekly_all,claude:session"}),
-    "04-claude-levels": dict(claude=claude(86, 97, 42), size=(400, 240)),
-    "05-claude": dict(claude=claude(34, 61, 18), size=(400, 240)),
+    "05-claude-levels": dict(claude=claude(86, 97, 42), size=(400, 240)),
+    "06-claude": dict(claude=claude(34, 61, 18), size=(400, 240)),
 }
 
 NOLOGIN = {"ok": False, "error": "nologin", "message": "not found"}
@@ -132,8 +132,8 @@ def shoot(name: str, spec: dict, out: Path, work: Path, scale: float, wallpaper:
     from PIL import Image
     folder = work / name
     folder.mkdir(parents=True)
-    answers = {"claude": {"ok": True, "status": 200, "provider": "claude", "rows": spec["claude"]} if spec.get("claude") else NOLOGIN,
-               "codex": {"ok": True, "status": 200, "provider": "codex", "rows": spec["codex"]} if spec.get("codex") else NOLOGIN}
+    answers = {"claude": {"ok": True, "provider": "claude", "rows": spec["claude"]} if spec.get("claude") else NOLOGIN,
+               "codex": {"ok": True, "provider": "codex", "rows": spec["codex"]} if spec.get("codex") else NOLOGIN}
     w, h = spec["size"]
     geometry = (96, 96, w, h)
     full_shot = folder / "screen.png"
@@ -166,6 +166,11 @@ def main() -> int:
     parser.add_argument("--only", action="append", default=[], help="one example's name; repeat for several")
     args = parser.parse_args()
     why_not = sh.missing()
+    if not why_not:
+        try:
+            __import__("PIL")
+        except ImportError:
+            why_not = "python package PIL (pillow) is not installed"
     if why_not:
         print(f"SKIPPED: {why_not}")
         return 0

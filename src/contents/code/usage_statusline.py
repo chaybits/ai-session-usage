@@ -17,23 +17,17 @@ import time
 from pathlib import Path
 
 import usage_claude
+from usage_claude import WINDOWS, describe
 from usage_common import is_number, iso_from_epoch, make_row, unique_ids
 
 PROVIDER = "claude"
 APP_DIR = "ai-session-usage"
 FILE_NAME = "claude-statusline.json"
 # A window Claude Code stops mentioning (it drops one once its reset time passes) is kept in the file, shown
-# with "Reset at", until this long after that reset; then it is forgotten (a limit that no longer applies).
+# with "Reset at" and 0 % (effective_percent), until this long after that reset; then it is forgotten (a limit
+# that no longer applies). The window table (key -> row id, group, label) is usage_claude.WINDOWS, shared with
+# the Claude Code source so a row keeps its id whichever source the widget uses.
 FORGET_AFTER_S = 8 * 86400
-# Known windows -> (row id, group, label), in display order. The ids are usage_claude's (the ones Claude Code's
-# answer gives), so a row hidden or moved in the settings stays that row whichever source the widget uses.
-WINDOWS = {
-    "five_hour": ("session", "session", "Session (5hr)"),
-    "seven_day": ("weekly_all", "weekly", "Weekly (7 day)"),
-    "seven_day_opus": ("weekly_scoped:Opus", "weekly", "Weekly (Opus)"),
-    "seven_day_sonnet": ("weekly_scoped:Sonnet", "weekly", "Weekly (Sonnet)"),
-    "spend_limit": ("spend_limit", "weekly", "Spend limit"),
-}
 
 
 def status_file() -> Path:
@@ -49,34 +43,36 @@ def status_file() -> Path:
     return root / APP_DIR / FILE_NAME
 
 
-def describe(key: str) -> tuple[str, str, str]:
+def effective_percent(w: dict, now: float) -> float:
     """
-    The row id, group and label of a window.
+    The percentage a kept window stands at now.
 
     Args:
-        key: The window's name in ``rate_limits`` (``five_hour``, ``seven_day``, ``seven_day_opus``, ...).
+        w: A window with a numeric ``used_percentage`` (and ``resets_at`` in Unix seconds, when known).
+        now: Unix seconds.
 
     Returns:
-        ``(row_id, group, label)``; a window not in WINDOWS is shown under its own name.
+        What Claude Code last reported, or 0 once the window's reset time has passed: the window is kept so the
+        row still shows "Reset at", but its old number is no longer true (the limit has reset).
     """
-    if key in WINDOWS:
-        return WINDOWS[key]
-    if key.startswith("seven_day_"):
-        name = key[len("seven_day_"):].replace("_", " ")
-        return f"weekly_scoped:{name}", "weekly", f"Weekly ({name})"
-    return key, "session" if key.startswith("five_hour") else "weekly", key.replace("_", " ").capitalize()
+    reset = w.get("resets_at")
+    if is_number(reset) and reset <= now:
+        return 0.0
+    return float(w["used_percentage"])
 
 
-def rows_from(windows: dict) -> list[dict]:
+def rows_from(windows: dict, now: float | None = None) -> list[dict]:
     """
     Turn the kept windows into display rows: the known ones in WINDOWS order, then any other.
 
     Args:
         windows: The file's ``rate_limits``.
+        now: Unix seconds (the clock, when None); a window whose reset has passed is a row at 0 %.
 
     Returns:
         Rows; a window without a numeric ``used_percentage`` is skipped.
     """
+    now = time.time() if now is None else now
     order = list(WINDOWS)
     keys = sorted(windows, key=lambda k: order.index(k) if k in order else len(order))
     rows = []
@@ -85,7 +81,7 @@ def rows_from(windows: dict) -> list[dict]:
         if not isinstance(w, dict) or not is_number(w.get("used_percentage")):
             continue
         row_id, group, label = describe(key)
-        rows.append(make_row(PROVIDER, row_id, key, group, label, w["used_percentage"],
+        rows.append(make_row(PROVIDER, row_id, key, group, label, effective_percent(w, now),
                              iso_from_epoch(w.get("resets_at"))))
     return unique_ids(rows)
 
@@ -145,18 +141,20 @@ def run(credentials: Path | None, path: Path | None = None) -> dict:
     Returns:
         The result object for ``emit``.
     """
+    # the login first: a status file left behind by /logout must not keep the section alive (D4)
+    login = credentials or usage_claude.default_credentials()
+    if not login.exists():
+        return {"ok": False, "error": "nologin", "message": f"{login} not found"}
     path = path or status_file()
     if not path.is_file():
-        login = credentials or usage_claude.default_credentials()
-        if not login.exists():
-            return {"ok": False, "error": "nologin", "message": f"{login} not found"}
         return {"ok": False, "error": "nostatusline", "message": str(path)}
     try:
         data = read_file(path)
     except (OSError, UnicodeDecodeError, ValueError) as exc:
         return {"ok": False, "error": "unreadable", "message": f"{path}: {type(exc).__name__}"}
-    rows = rows_from(data["rate_limits"])
+    now = time.time()
+    rows = rows_from(data["rate_limits"], now)
     if not rows:
         return {"ok": False, "error": "nostatusline", "message": f"{path}: no limits yet"}
-    return {"ok": True, "status": 200, "source": "statusline", "captured_at": int(data["captured_at"]),
-            "fetched_at": int(time.time()), "rows": rows}
+    return {"ok": True, "source": "statusline", "captured_at": int(data["captured_at"]), "fetched_at": int(now),
+            "rows": rows}

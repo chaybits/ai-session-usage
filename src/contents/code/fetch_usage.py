@@ -13,9 +13,9 @@ writes from Claude Code's own status line (``usage_statusline``). ``codex``: Cod
 the provider is left out. No login is ever refreshed by anyone but its own CLI.
 
 Exit status is always 0 and stdout is always one pure-ASCII JSON line; the outcome is in the JSON
-(``ok``, ``error``, ``status``). No token appears in any output, on any path: none is ever read.
+(``ok``, ``error``, ``message``). No token appears in any output, on any path: none is ever read.
 
-The output also carries fields the widget does not read (``fetched_at``, ``source``, ``status``, ``plan``,
+The output also carries fields the widget does not read (``fetched_at``, ``source``, ``plan``,
 per-row ``kind`` and ``provider``); they are there for running this by hand.
 """
 from __future__ import annotations

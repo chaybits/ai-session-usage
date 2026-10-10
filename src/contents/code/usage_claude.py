@@ -15,13 +15,16 @@ from pathlib import Path
 from usage_common import is_number, make_row, str_or, unique_ids
 
 PROVIDER = "claude"
-# Fallback when the body has no ``limits`` list: the two classic windows and the old per-model weekly caps
-# (null on most plans).
-WINDOW_LABELS = {
-    "five_hour": "Session (5hr)",
-    "seven_day": "Weekly (7 day)",
-    "seven_day_opus": "Weekly (Opus)",
-    "seven_day_sonnet": "Weekly (Sonnet)",
+# The classic usage windows, window key -> (row id, group, label), in display order: the fallback when the body
+# has no ``limits`` list, and the names Claude Code's status line uses. One table for both Claude sources, and
+# the ids are the ``limits`` kinds (``session``, ``weekly_all``, ``weekly_scoped:<model>``), so a row hidden or
+# moved in the settings stays that row whichever shape or source gave it.
+WINDOWS = {
+    "five_hour": ("session", "session", "Session (5hr)"),
+    "seven_day": ("weekly_all", "weekly", "Weekly (7 day)"),
+    "seven_day_opus": ("weekly_scoped:Opus", "weekly", "Weekly (Opus)"),
+    "seven_day_sonnet": ("weekly_scoped:Sonnet", "weekly", "Weekly (Sonnet)"),
+    "spend_limit": ("spend_limit", "weekly", "Spend limit"),
 }
 # ``limits[].kind`` -> label. Claude Code's schema says to classify rows on ``kind``, never on a label, and to
 # keep the server's order. Scoped rows (e.g. the Fable cap) are named after ``scope.model.display_name`` or
@@ -40,6 +43,25 @@ def default_credentials() -> Path:
     return Path(base) / ".credentials.json"
 
 
+def describe(key: str) -> tuple[str, str, str]:
+    """
+    The row id, group and label of a classic window.
+
+    Args:
+        key: The window's name (``five_hour``, ``seven_day``, ``seven_day_opus``, ...).
+
+    Returns:
+        ``(row_id, group, label)``: WINDOWS' entry, a per-model weekly cap by its model's name, or else the
+        window shown under its own name.
+    """
+    if key in WINDOWS:
+        return WINDOWS[key]
+    if key.startswith("seven_day_"):
+        name = key[len("seven_day_"):].replace("_", " ")
+        return f"weekly_scoped:{name}", "weekly", f"Weekly ({name})"
+    return key, "session" if key.startswith("five_hour") else "weekly", key.replace("_", " ").capitalize()
+
+
 def window(data: dict, key: str) -> dict | None:
     """
     Extract one classic usage window (``five_hour``, ``seven_day``, ...) as a row.
@@ -54,8 +76,8 @@ def window(data: dict, key: str) -> dict | None:
     w = data.get(key)
     if not isinstance(w, dict) or not is_number(w.get("utilization")):
         return None
-    return make_row(PROVIDER, key, key, "session" if key == "five_hour" else "weekly",
-                    WINDOW_LABELS.get(key, key), w["utilization"], w.get("resets_at"))
+    row_id, group, label = describe(key)
+    return make_row(PROVIDER, row_id, key, group, label, w["utilization"], w.get("resets_at"))
 
 
 def scope_name(scope: object) -> str | None:
@@ -122,4 +144,4 @@ def rows_from_body(body: dict) -> tuple[list[dict], str]:
     rows = limit_rows(body)
     if rows:
         return rows, "limits"
-    return unique_ids([w for key in WINDOW_LABELS if (w := window(body, key)) is not None]), "windows"
+    return unique_ids([w for key in WINDOWS if (w := window(body, key)) is not None]), "windows"

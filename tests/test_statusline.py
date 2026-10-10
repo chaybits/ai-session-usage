@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -38,7 +39,7 @@ class Sandbox(unittest.TestCase):
 
     def setUp(self) -> None:
         self.dir = Path(tempfile.mkdtemp(prefix="cu-statusline-"))
-        self.addCleanup(lambda: subprocess.run(["rm", "-rf", str(self.dir)], check=False))
+        self.addCleanup(shutil.rmtree, self.dir, ignore_errors=True)
         self.env = {k: v for k, v in os.environ.items() if k not in ("CLAUDE_CONFIG_DIR", "XDG_CACHE_HOME", "LOCALAPPDATA")}
         self.env.update(HOME=str(self.dir / "home"), XDG_CACHE_HOME=str(self.dir / "cache"),
                         CLAUDE_CONFIG_DIR=str(self.dir / "home/.claude"), PYTHONDONTWRITEBYTECODE="1")
@@ -112,6 +113,25 @@ class TestTap(Sandbox):
         done = self.tap(json.dumps(dict(SESSION, rate_limits=LIMITS)))
         self.assertEqual(done.returncode, 0)
         self.assertIn("statusline_tap:", done.stderr, "the problem is named")
+        self.assertEqual(done.stdout, "5h 24% · 7d 41%\n", "the numbers the input carried are shown anyway")
+
+    def test_utf8_input_survives_a_legacy_locale(self) -> None:
+        # Claude Code writes UTF-8; on a Windows machine Python decodes a redirected stdin in the ANSI code page
+        # (cp1254 on a Turkish one), where a capital S-cedilla in the session's folder is not decodable
+        session = dict(SESSION, cwd="/home/someone/Şiir", rate_limits=LIMITS)
+        env = dict(self.env, PYTHONIOENCODING="cp1254")
+        done = subprocess.run([sys.executable, str(TAP), "--quiet"], input=json.dumps(session, ensure_ascii=False).encode("utf-8"),
+                              capture_output=True, env=env, timeout=30)
+        self.assertEqual((done.returncode, done.stderr), (0, b""))
+        self.assertEqual(json.loads(self.status.read_text(encoding="utf-8"))["rate_limits"], LIMITS)
+
+    def test_an_expired_window_shows_zero_on_the_bar(self) -> None:
+        # a window whose reset has passed is kept (ARCHITECTURE D15) but its old percentage is no longer true
+        old = {"five_hour": {"used_percentage": 90, "resets_at": NOW - 600}, "seven_day": {"used_percentage": 40, "resets_at": NOW + 86400}}
+        self.status.parent.mkdir(parents=True)
+        self.status.write_text(json.dumps({"captured_at": NOW - 700, "rate_limits": old}), encoding="utf-8")
+        done = self.tap(json.dumps(SESSION))
+        self.assertEqual(done.stdout, "5h 0% · 7d 40%\n")
 
     def test_then_runs_an_earlier_status_line_with_the_same_input(self) -> None:
         done = self.tap(json.dumps(dict(SESSION, rate_limits=LIMITS)), "--quiet", "--then",
@@ -148,6 +168,21 @@ class TestHelperSource(Sandbox):
 
     def test_no_claude_code_login_leaves_the_provider_out(self) -> None:
         self.assertEqual(self.helper()["error"], "nologin")
+
+    def test_a_status_file_left_by_an_earlier_login_is_not_shown_after_logout(self) -> None:
+        # /logout removes the login file and leaves the status file: the provider is left out (ARCHITECTURE D4)
+        self.tap(json.dumps(dict(SESSION, rate_limits=LIMITS)))
+        self.assertTrue(self.status.exists())
+        self.assertEqual(self.helper()["error"], "nologin")
+
+    def test_an_expired_window_is_a_row_at_zero_with_its_reset_in_the_past(self) -> None:
+        self.login()
+        old = {"five_hour": {"used_percentage": 90, "resets_at": NOW - 600}, "seven_day": {"used_percentage": 40, "resets_at": NOW + 86400}}
+        self.status.parent.mkdir(parents=True)
+        self.status.write_text(json.dumps({"captured_at": NOW - 700, "rate_limits": old}), encoding="utf-8")
+        rows = self.helper()["rows"]
+        self.assertEqual([(x["id"], x["percent"]) for x in rows], [("claude:session", 0.0), ("claude:weekly_all", 40.0)])
+        self.assertEqual(rows[0]["resets_at"][:19], time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(NOW - 600)), "the reset time stays")
 
     def test_a_login_but_no_status_line_yet_says_so(self) -> None:
         self.login()

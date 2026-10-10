@@ -36,13 +36,17 @@ def package_version() -> str:
     Return the package version, read from the package's ``metadata.json`` (the one place it is written).
 
     Returns:
-        The version, or ``unknown`` when that file cannot be read, which the tests would catch.
+        The version, or ``unknown`` when no copy can be read, which the tests would catch. In the Plasma package
+        the file is two levels up (``src/metadata.json``); the Rainmeter package carries a copy beside the helper
+        (``@Resources/code/metadata.json``, written by ``build_rmskin.py``).
     """
-    meta = Path(__file__).resolve().parents[2] / "metadata.json"
-    try:
-        return str(json.loads(meta.read_text(encoding="utf-8"))["KPlugin"]["Version"])
-    except (OSError, ValueError, KeyError, TypeError):
-        return "unknown"
+    here = Path(__file__).resolve().parent
+    for meta in (here / "metadata.json", here.parents[1] / "metadata.json"):
+        try:
+            return str(json.loads(meta.read_text(encoding="utf-8"))["KPlugin"]["Version"])
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+    return "unknown"
 
 
 def emit(payload: dict) -> None:

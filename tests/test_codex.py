@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -90,17 +91,20 @@ class Sandbox(unittest.TestCase):
 
     def setUp(self) -> None:
         self.dir = Path(tempfile.mkdtemp(prefix="cu-codex-"))
-        self.addCleanup(lambda: subprocess.run(["rm", "-rf", str(self.dir)], check=False))
+        self.addCleanup(shutil.rmtree, self.dir, ignore_errors=True)
         self.bin = self.dir / "bin"
         self.bin.mkdir()
         self.fake = self.bin / "codex"
         self.fake.write_text(FAKE, encoding="utf-8")
         self.fake.chmod(0o755)
+        # the PATH holds only this folder, so a real codex installed on the machine can never be started by a
+        # test; the fake's "env python3" line needs python3 there
+        (self.bin / "python3").symlink_to(sys.executable)
         self.record = self.dir / "record.jsonl"
         (self.dir / "home/.codex").mkdir(parents=True)
         self.env = {k: v for k, v in os.environ.items() if k not in ("CODEX_HOME",)}
         self.env.update(HOME=str(self.dir / "home"), CODEX_HOME=str(self.dir / "home/.codex"),
-                        PATH=f"{self.bin}:/usr/bin:/bin", PYTHONDONTWRITEBYTECODE="1",
+                        PATH=str(self.bin), PYTHONDONTWRITEBYTECODE="1",
                         FAKE_CODEX_RECORD=str(self.record), FAKE_CODEX_ANSWER=json.dumps(ANSWER))
 
     def login(self) -> None:
@@ -200,6 +204,7 @@ class TestCodexSource(Sandbox):
         self.login()
         sys.path.insert(0, str(CODE))
         self.addCleanup(sys.path.remove, str(CODE))
+        sys.dont_write_bytecode = True  # an in-process import must not leave a __pycache__ in the package (D17)
         import usage_codex
         saved = (usage_codex.TIMEOUT_S, dict(os.environ))
         self.addCleanup(lambda: (setattr(usage_codex, "TIMEOUT_S", saved[0]), os.environ.clear(), os.environ.update(saved[1])))
@@ -226,6 +231,15 @@ class TestRows(unittest.TestCase):
     def setUp(self) -> None:
         sys.path.insert(0, str(CODE))
         self.addCleanup(sys.path.remove, str(CODE))
+        sys.dont_write_bytecode = True
+
+    def test_the_windows_npm_fallback_is_only_tried_with_appdata_set(self) -> None:
+        # without APPDATA (always, off Windows) the candidate must not become a relative path, which Popen
+        # would resolve against the helper's working folder
+        import usage_codex
+        saved = os.environ.pop("APPDATA", None)
+        self.addCleanup(lambda: os.environ.update({"APPDATA": saved}) if saved is not None else None)
+        self.assertTrue(all(p.is_absolute() for p in usage_codex.fallbacks()), usage_codex.fallbacks())
 
     def test_without_the_by_id_map_the_plan_limit_alone_is_used(self) -> None:
         import usage_codex

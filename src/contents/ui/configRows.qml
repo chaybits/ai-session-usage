@@ -61,7 +61,8 @@ KCM.SimpleKCM {
 
                 QQC2.CheckBox {
                     Layout.fillWidth: true
-                    text: page.providerName(entry.modelData.provider) + " · " + entry.modelData.label
+                    text: i18nc("a service's name, then one of its usage rows", "%1 · %2",
+                                page.providerName(entry.modelData.provider), entry.modelData.label)
                     checked: (page.cfg_hiddenRows || []).indexOf(entry.modelData.id) < 0
                     onToggled: page.setShown(entry.modelData.id, checked)
                 }

@@ -42,7 +42,7 @@ ColumnLayout {
         }
         CardLabel {
             objectName: "percent:" + row.rowId
-            text: Math.round(row.percent) + "%"
+            text: i18nc("a used percentage", "%1%", Logic.displayPercent(row.percent))
             font.bold: true
             font.pointSize: Kirigami.Theme.defaultFont.pointSize * row.zoom
             color: row.percentColor

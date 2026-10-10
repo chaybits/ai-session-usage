@@ -16,9 +16,8 @@ import os
 import time
 from pathlib import Path
 
-from usage_common import (ask_cli, find_program, is_number, iso_from_epoch, make_row, package_version, str_or,
-                          unique_ids)
-
+from usage_common import (MAX_MESSAGE_CHARS, ask_cli, find_program, is_number, iso_from_epoch, make_row,
+                          package_version, str_or, unique_ids)
 PROVIDER = "codex"
 # Bounds the whole Codex run (it answers in well under a second); the widget's watchdog (60 s) bounds the helper.
 TIMEOUT_S = 30
@@ -125,6 +124,23 @@ def rows_from_answer(result: dict) -> tuple[list[dict], str | None]:
     return unique_ids(rows), str_or(main.get("planType"), None)
 
 
+def fallbacks() -> tuple[Path, ...]:
+    """
+    Where Codex's installers put it, for a PATH that lacks it.
+
+    Returns:
+        ``~/.local/bin/codex``, npm's global ``codex``, and on Windows npm's ``codex.cmd`` under APPDATA, the last
+        only when APPDATA is set, so that no candidate is ever a relative path (Popen would resolve one against
+        the helper's working folder).
+    """
+    home = Path.home()
+    found = [home / ".local/bin/codex", home / ".npm-global/bin/codex"]
+    appdata = os.environ.get("APPDATA")
+    if appdata:
+        found.append(Path(appdata) / "npm/codex.cmd")
+    return tuple(found)
+
+
 def run(auth: Path | None, command: str | None = None) -> dict:
     """
     Produce the result for the widget by asking Codex.
@@ -140,8 +156,7 @@ def run(auth: Path | None, command: str | None = None) -> dict:
     login = auth or default_auth()
     if not login.exists():
         return {"ok": False, "error": "nologin", "message": f"{login} not found"}
-    exe = find_program(command, "codex", (Path.home() / ".local/bin/codex", Path.home() / ".npm-global/bin/codex",
-                                          Path(os.environ.get("APPDATA", "")) / "npm/codex.cmd"))  # npm on Windows
+    exe = find_program(command, "codex", fallbacks())
     if exe is None:
         return {"ok": False, "error": "nocli", "message": command or "codex"}
     requests = [
@@ -162,9 +177,9 @@ def run(auth: Path | None, command: str | None = None) -> dict:
     if "error" in done.answer:
         error = done.answer["error"]
         message = error.get("message") if isinstance(error, dict) else error
-        return {"ok": False, "error": "cli", "message": (str_or(message, None) or "error")[:200]}
+        return {"ok": False, "error": "cli", "message": (str_or(message, None) or "error")[:MAX_MESSAGE_CHARS]}
     result = done.answer.get("result") if isinstance(done.answer.get("result"), dict) else {}
     rows, plan = rows_from_answer(result)
     if not rows:
         return {"ok": False, "error": "format", "message": "no rate limit windows in Codex's answer"}
-    return {"ok": True, "status": 200, "source": "codex", "fetched_at": int(time.time()), "plan": plan, "rows": rows}
+    return {"ok": True, "source": "codex", "fetched_at": int(time.time()), "plan": plan, "rows": rows}

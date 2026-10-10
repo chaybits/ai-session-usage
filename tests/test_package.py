@@ -15,7 +15,7 @@ import sys
 import tempfile
 import unittest
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
@@ -87,9 +87,37 @@ class TestBuild(unittest.TestCase):
                                   capture_output=True, text=True)
             self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
 
+    def test_a_build_on_windows_is_byte_identical(self) -> None:
+        # zipfile stamps each entry with the system that writes it (0 on Windows, 3 on Unix; read when an entry is made, so the shim imports zipfile before it claims Windows); a run that believes it is
+        # on Windows must still write the release's bytes.
+        out = self.tmp / "as-windows"
+        code = ("import runpy, sys, zipfile; sys.platform = 'win32'; "
+                f"sys.argv = ['build_plasmoid.py', '--src', {str(SRC)!r}, '--out', {str(out)!r}]; "
+                f"runpy.run_path({str(BUILD)!r}, run_name='__main__')")
+        proc = subprocess.run([sys.executable, "-B", "-c", code], capture_output=True, text=True,
+                              env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual((out / self.plasmoid.name).read_bytes(), self.plasmoid.read_bytes())
+
     def test_two_builds_are_byte_identical(self) -> None:
         again, _ = build_ok(self.tmp / "again")
         self.assertEqual(again.read_bytes(), self.plasmoid.read_bytes())
+
+    def test_entries_are_in_path_order_whatever_the_platform(self) -> None:
+        # the entry order is part of the bytes: it must be the order of the paths' parts, compared as strings,
+        # which is the same on Linux and on Windows (a Path sort is case-insensitive there and differs)
+        with zipfile.ZipFile(self.plasmoid) as archive:
+            names = archive.namelist()
+        self.assertEqual(names, sorted(names, key=lambda n: PurePosixPath(n).parts))
+
+    def test_a_folder_without_metadata_is_refused_with_a_message(self) -> None:
+        empty = self.tmp / "empty-src"
+        empty.mkdir()
+        proc = subprocess.run([sys.executable, "-B", str(BUILD), "--src", str(empty), "--out", str(self.tmp / "x")],
+                              capture_output=True, text=True, env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("no metadata.json", proc.stderr)
+        self.assertNotIn("Traceback", proc.stderr, "a refusal, not a crash")
 
     def test_a_compiled_module_in_the_tree_is_refused(self) -> None:
         copy = self.tmp / "src"

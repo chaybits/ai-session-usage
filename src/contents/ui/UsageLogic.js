@@ -6,14 +6,11 @@
 var LOCAL_POLL_MS = 30000
 // A burst of clicks should not turn into a burst of requests.
 var TAP_THROTTLE_MS = 10000
-// The helper's 15 s timeout bounds each network step, not the whole run (DNS and a slow trickle escape it);
-// this is what bounds the run.
+// The helper bounds its own CLI run (40 s for Claude Code, 30 s for Codex); this bounds a helper that never
+// starts or never comes back (a saturated disk, a stuck launcher).
 var WATCHDOG_MS = 60000
-// Rate-limited without a usable Retry-After: wait this long.
-var DEFAULT_RETRY_S = 600
-// One odd Retry-After must not idle the widget for hours (the helper clamps too).
-var MAX_RETRY_S = 3600
-// First retry after a network or server failure (login with no network yet); doubles up to the poll interval.
+// First retry after a CLI ran but gave no usable answer (not up yet, offline, a server error) or the watchdog
+// ended the helper; doubles up to the poll interval.
 var FAST_RETRY_MS = 30000
 // How much of a failed run's output is shown: the tail, where the reason is.
 var OUTPUT_TAIL_CHARS = 160
@@ -25,6 +22,13 @@ var RESET_NOW_MS = 30000
 var WEEKDAY_SPAN_DAYS = 6
 // "Fit to width": at this width, in grid units, the content is at 100 % (about 400 px at the default font).
 var BASE_WIDTH_UNITS = 22
+// The least Plasma may give the card: a panel popup or a desktop slot narrower than this is unreadable.
+var MIN_WIDTH_UNITS = 8
+// The least height asked for outside "make the widget taller": enough for the title and one row to scroll in.
+var MIN_HEIGHT_UNITS = 4
+// Shrink-to-fit grows back only to strictly under the scale last seen overflowing (D7): without this margin the
+// ceiling equals that scale, the fit grows to it, overflows, and hops between the two for ever.
+var CEILING_MARGIN = 0.005
 // The height of the slot the widget was designed in (with BASE_WIDTH_UNITS, about 400 x 256): what a widget just
 // added asks the desktop for.
 var BASE_HEIGHT_UNITS = 14
@@ -46,15 +50,21 @@ function scriptPath(url) {
     return decodeURIComponent(String(url).replace(/^file:\/\//, ""))
 }
 
+// A row as the helper's contract defines it: an object with a string id and label and a finite percentage.
+function isRow(row) {
+    return row !== null && typeof row === "object" && typeof row.id === "string" && typeof row.label === "string"
+        && typeof row.percent === "number" && isFinite(row.percent)
+}
+
 // The helper prints one JSON line; anything else is shown as a badoutput error with the output's tail.
-// Valid JSON that is not the helper's shape (null, a number, ok without rows) is badoutput too: the widget
-// reads result.ok and result.rows without further checks.
+// Valid JSON that is not the helper's shape (null, a number, ok without rows, a row that is not a row) is
+// badoutput too: the widget reads result.ok, result.rows and each row's fields without further checks.
 function parseOutput(stdout, stderr) {
     try {
         const lines = stdout.trim().split("\n")
         const result = JSON.parse(lines[lines.length - 1])
         if (result === null || typeof result !== "object" || typeof result.ok !== "boolean"
-                || (result.ok && !Array.isArray(result.rows))) {
+                || (result.ok && !(Array.isArray(result.rows) && result.rows.every(isRow)))) {
             throw new TypeError("not the helper's result shape")
         }
         return result
@@ -64,21 +74,20 @@ function parseOutput(stdout, stderr) {
 }
 
 // When to poll next after this result. prevStep is the last fast-retry step in ms (0 = none).
-// Returns { intervalMs, step }.
+// A CLI that ran but gave no usable answer (`cli`: not up yet, offline, a server error, a crash) and a helper
+// the watchdog ended (`timeout`) are retried fast, doubling up to the poll interval; every other kind (no
+// login, no program, a changed shape, a bad file) does not change in 30 s. Returns { intervalMs, step }.
 function nextPoll(result, prevStep, pollMs) {
-    if (result.ok) {
-        return { intervalMs: pollMs, step: 0 }
-    }
-    if (result.error === "ratelimited") {
-        // 0 is a real answer ("retry now"; the helper clamps a past date to 0), not a missing one.
-        const retryS = Math.min(typeof result.retry_after === "number" ? result.retry_after : DEFAULT_RETRY_S, MAX_RETRY_S)
-        return { intervalMs: Math.max(pollMs, retryS * 1000), step: 0 }
-    }
-    if (result.error === "network" || (result.error === "http" && result.status >= 500)) {
+    if (!result.ok && (result.error === "cli" || result.error === "timeout")) {
         const step = Math.min(prevStep > 0 ? prevStep * 2 : FAST_RETRY_MS, pollMs)
         return { intervalMs: step, step: step }
     }
     return { intervalMs: pollMs, step: 0 }
+}
+
+// A path as one word for the POSIX shell that runs the helper and Claude Code's status-line command.
+function shellQuote(s) {
+    return "'" + String(s).replace(/'/g, "'\\''") + "'"
 }
 
 // Classify a reset time against now: { kind: "none" | "now" | "past" | "future", mins }.
@@ -122,12 +131,19 @@ function isOutdated(lastSuccessMs, nowMs, staleMinutes) {
     return staleMinutes > 0 && lastSuccessMs > 0 && nowMs - lastSuccessMs > staleMinutes * 60000
 }
 
-// "normal", "warning" or "critical" for a used percentage; a threshold of 0 is off.
+// The number the card prints for a used percentage (the helper may pass a fraction).
+function displayPercent(percent) {
+    return Math.round(percent)
+}
+
+// "normal", "warning" or "critical" for a used percentage; a threshold of 0 is off. Judged on the number the
+// card prints, so a row reading "95%" wears 95's colour.
 function levelOf(percent, warnAt, criticalAt) {
-    if (criticalAt > 0 && percent >= criticalAt) {
+    const shown = displayPercent(percent)
+    if (criticalAt > 0 && shown >= criticalAt) {
         return "critical"
     }
-    if (warnAt > 0 && percent >= warnAt) {
+    if (warnAt > 0 && shown >= warnAt) {
         return "warning"
     }
     return "normal"
@@ -310,13 +326,13 @@ function compactParts(groups) {
             if (i > 0) {
                 parts.push({ kind: "sep", text: "·", percent: 0 })
             }
-            parts.push({ kind: "value", text: Math.round(r.percent) + "%", percent: r.percent })
+            parts.push({ kind: "value", text: displayPercent(r.percent) + "%", percent: r.percent })
         })
     }
     return parts.length > 0 ? parts : [{ kind: "none", text: "--", percent: 0 }]
 }
 
-// The compact form as one string (its tooltip and the tests).
+// The compact form as one string (the tests and the by-hand panel check).
 function compactText(groups) {
     return compactParts(groups).map(p => p.text).join(" ")
 }

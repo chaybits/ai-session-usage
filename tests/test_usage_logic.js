@@ -12,7 +12,7 @@ const source = fs.readFileSync(path.join(pkg, "contents", "ui", "UsageLogic.js")
     .split("\n").filter(l => !/^\s*\.(pragma|import)/.test(l)).join("\n");
 const ctx = vm.createContext({});
 vm.runInContext(source + "\nthis.L = { TAP_THROTTLE_MS, WATCHDOG_MS, FAST_RETRY_MS, MIN_ZOOM, MAX_ZOOM, MIN_SHRINK, COMPACT_ROWS, "
-    + "scriptPath, parseOutput, nextPoll, resetInfo, resetStyle, visibleRows, isOutdated, levelOf, zoomFor, shrinkStep, "
+    + "scriptPath, parseOutput, nextPoll, resetInfo, resetStyle, visibleRows, isOutdated, levelOf, zoomFor, shrinkStep, displayPercent, shellQuote, "
     + "mergeKnownRows, parseKnownRows, compactParts, compactText, levelColor, applyOrder, arrangeRows, "
     + "rowsByProvider, defaultKnownOrder, moveId, preferredSize };", ctx);
 const L = ctx.L;
@@ -49,43 +49,49 @@ test("F23 parseOutput: valid JSON that is not the helper's shape is badoutput", 
         assert.equal(r.ok, false, line);
         assert.equal(r.message, line, "the output is shown");
     }
-    assert.equal(L.parseOutput('{"ok": false, "error": "expired"}', "").error, "expired", "an error result passes");
+    assert.equal(L.parseOutput('{"ok": false, "error": "nocli"}', "").error, "nocli", "an error result passes");
 });
 
-test("F08 network failure retries fast, doubling up to the poll interval", () => {
-    const fail = { ok: false, error: "network" };
-    let p = L.nextPoll(fail, 0, POLL);
-    assert.deepEqual([p.intervalMs, p.step], [30000, 30000]);
-    p = L.nextPoll(fail, p.step, POLL);
-    assert.deepEqual([p.intervalMs, p.step], [60000, 60000]);
-    let step = p.step;
-    for (let i = 0; i < 6; i++) { step = L.nextPoll(fail, step, POLL).step; }
-    assert.equal(step, POLL, "bounded by the poll interval");
-    assert.equal(L.nextPoll(fail, POLL, POLL).intervalMs, POLL);
+test("B-06 parseOutput: a row that is not a row is badoutput, not a healthy answer", () => {
+    for (const rows of ["[null]", "[5]", '[{"id": "claude:session"}]', '[{"percent": 5}]',
+                        '[{"id": "x", "label": "y", "percent": "5"}]', '[{"id": "x", "label": 3, "percent": 5}]']) {
+        const r = L.parseOutput('{"ok": true, "rows": ' + rows + '}\n', "");
+        assert.equal(r.error, "badoutput", rows);
+    }
+    assert.equal(L.parseOutput('{"ok": true, "rows": [{"id": "x", "label": "y", "percent": 5, "resets_at": null}]}', "").ok, true);
 });
 
-test("F08 http 5xx retries fast, 4xx and auth do not, success resets", () => {
-    assert.equal(L.nextPoll({ ok: false, error: "http", status: 503 }, 0, POLL).intervalMs, 30000);
-    assert.equal(L.nextPoll({ ok: false, error: "http", status: 404 }, 0, POLL).intervalMs, POLL);
-    assert.equal(L.nextPoll({ ok: false, error: "auth", status: 401 }, 0, POLL).intervalMs, POLL);
+test("B-01 a CLI that gave no usable answer retries fast, doubling up to the poll interval", () => {
+    // the one transient failure the helper can report since the CLIs are asked directly (D16, D20): offline,
+    // a server error, a crash, all `cli`; a helper the watchdog ended is `timeout`
+    for (const kind of ["cli", "timeout"]) {
+        const fail = { ok: false, error: kind };
+        let p = L.nextPoll(fail, 0, POLL);
+        assert.deepEqual([p.intervalMs, p.step], [30000, 30000], kind);
+        p = L.nextPoll(fail, p.step, POLL);
+        assert.deepEqual([p.intervalMs, p.step], [60000, 60000], kind);
+        let step = p.step;
+        for (let i = 0; i < 6; i++) { step = L.nextPoll(fail, step, POLL).step; }
+        assert.equal(step, POLL, "bounded by the poll interval");
+        assert.equal(L.nextPoll(fail, POLL, POLL).intervalMs, POLL);
+    }
+});
+
+test("B-01 the kinds that do not change in 30 s wait the poll interval, success resets", () => {
+    for (const kind of ["nologin", "nocli", "format", "nostatusline", "unreadable", "usage", "badoutput", "internal"]) {
+        assert.deepEqual({ ...L.nextPoll({ ok: false, error: kind }, 0, POLL) }, { intervalMs: POLL, step: 0 }, kind);
+    }
     assert.deepEqual({ ...L.nextPoll({ ok: true }, 120000, POLL) }, { intervalMs: POLL, step: 0 });
 });
 
-test("F08 a poll interval shorter than the fast retry is never exceeded", () => {
-    assert.equal(L.nextPoll({ ok: false, error: "network" }, 0, 60000 / 2).intervalMs, 30000);
-    assert.equal(L.nextPoll({ ok: false, error: "network" }, 0, 20000).intervalMs, 20000);
+test("B-01 a poll interval shorter than the fast retry is never exceeded", () => {
+    assert.equal(L.nextPoll({ ok: false, error: "cli" }, 0, 60000 / 2).intervalMs, 30000);
+    assert.equal(L.nextPoll({ ok: false, error: "cli" }, 0, 20000).intervalMs, 20000);
 });
 
-test("F20 rate limit: default, honoured, and clamped to an hour", () => {
-    assert.equal(L.nextPoll({ ok: false, error: "ratelimited" }, 0, POLL).intervalMs, 600000);
-    assert.equal(L.nextPoll({ ok: false, error: "ratelimited", retry_after: 900 }, 0, POLL).intervalMs, 900000);
-    assert.equal(L.nextPoll({ ok: false, error: "ratelimited", retry_after: 86400 }, 0, POLL).intervalMs, 3600000);
-    assert.equal(L.nextPoll({ ok: false, error: "ratelimited", retry_after: 5 }, 0, POLL).intervalMs, POLL);
-});
-
-test("F25 rate limit: retry_after 0 means 'now' (the poll interval), null means the default", () => {
-    assert.equal(L.nextPoll({ ok: false, error: "ratelimited", retry_after: 0 }, 0, POLL).intervalMs, POLL);
-    assert.equal(L.nextPoll({ ok: false, error: "ratelimited", retry_after: null }, 0, POLL).intervalMs, 600000);
+test("B-02 shellQuote: a path with a space, a quote and a hash survives the shell", () => {
+    assert.equal(L.shellQuote("/home/jo hn/it's a #dir/x.py"), "'/home/jo hn/it'\\''s a #dir/x.py'");
+    assert.equal(L.shellQuote("plain"), "'plain'");
 });
 
 test("F07 resetInfo: future, now, long past", () => {
@@ -139,6 +145,16 @@ test("levelOf: warning and critical thresholds, 0 is off", () => {
     assert.equal(L.levelOf(80, 80, 95), "warning");
     assert.equal(L.levelOf(95, 80, 95), "critical");
     assert.equal(L.levelOf(100, 0, 0), "normal");
+});
+
+test("B-04 the level follows the number the card prints, not the raw fraction", () => {
+    // 94.6 prints as 95%: it must wear 95's colour; 79.4 prints as 79% and stays normal
+    assert.equal(L.displayPercent(94.6), 95);
+    assert.equal(L.levelOf(94.6, 80, 95), "critical");
+    assert.equal(L.levelOf(94.4, 80, 95), "warning");
+    assert.equal(L.levelOf(79.5, 80, 95), "warning");
+    assert.equal(L.levelOf(79.4, 80, 95), "normal");
+    assert.equal(L.compactText([{ rows: [{ percent: 94.6 }] }]), "95%");
 });
 
 test("zoomFor: fit follows the width, fixed follows the percent, both bounded", () => {

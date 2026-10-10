@@ -30,6 +30,9 @@ ROOT = Path(__file__).resolve().parent.parent
 FIXED_TIME = (1980, 1, 1, 0, 0, 0)
 FILE_MODE = 0o644 << 16
 FOOTER_KEY = b"RMSKIN\0"
+# zipfile stamps each entry with the system that writes it (0 on Windows): one value everywhere, so a build on
+# Windows has the release's bytes too
+UNIX = 3
 
 
 def version_of() -> str:
@@ -52,6 +55,9 @@ def entries() -> list[tuple[str, Path]]:
             found.append((f"Skins/{SKIN}/{path.relative_to(skin_dir).as_posix()}", path))
     for path in code_dir.glob("*.py"):
         found.append((f"Skins/{SKIN}/@Resources/code/{path.name}", path))
+    # the helper reads the package version beside itself here (usage_common.package_version): build output, not
+    # a second authored copy
+    found.append((f"Skins/{SKIN}/@Resources/code/metadata.json", ROOT / "src/metadata.json"))
     compiled = [p for _, p in found if "__pycache__" in p.parts or p.suffix == ".pyc"]
     if compiled or list(code_dir.glob("**/*.pyc")):
         raise SystemExit("refusing to pack compiled Python: delete __pycache__ first")
@@ -105,11 +111,13 @@ def build(out: Path) -> tuple[Path, Path]:
         info = zipfile.ZipInfo("RMSKIN.ini", date_time=FIXED_TIME)
         info.compress_type = zipfile.ZIP_STORED
         info.external_attr = FILE_MODE
+        info.create_system = UNIX
         archive.writestr(info, rmskin_ini(version).encode("utf-8"))
         for name, path in files:
             info = zipfile.ZipInfo(name, date_time=FIXED_TIME)
             info.compress_type = zipfile.ZIP_STORED
             info.external_attr = FILE_MODE
+            info.create_system = UNIX
             archive.writestr(info, packed(name, path))
     zip_size = target.stat().st_size
     with target.open("ab") as f:
