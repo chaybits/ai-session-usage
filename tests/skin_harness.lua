@@ -12,6 +12,11 @@ SKIN = {
     GetMeasure = function(_, name)
         return { GetStringValue = function() return measures[name] or "" end }
     end,
+    -- A String meter's height after Rainmeter wrapped its text: 14 (one line) unless a test sets var:h:<meter>.
+    GetMeter = function(_, name)
+        local h = tonumber(vars["h:" .. name] or "") or 14
+        return { GetH = function() return h end }
+    end,
     Bang = function(_, ...)
         local parts = {}
         for i = 1, select("#", ...) do parts[#parts + 1] = tostring((select(i, ...))) end

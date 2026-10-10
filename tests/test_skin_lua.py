@@ -152,6 +152,20 @@ class TestRainmeterSide(unittest.TestCase):
             'BANG\t!SetOption\tmClaude\tParameter\t-B "C:\\Skins\\AiSessionUsage\\@Resources\\code\\fetch_usage.py" --provider claude --source statusline',
             'BANG\t!SetOption\tmCodex\tParameter\t-B "C:\\Skins\\AiSessionUsage\\@Resources\\code\\fetch_usage.py" --provider codex --codex "C:\\tools\\codex.cmd"'])
 
+    def test_a_wrapped_message_pushes_what_follows_down(self) -> None:
+        # Rainmeter wraps a provider's message (ClipString=2), so only it knows the height: the layout must take the
+        # measured height, or the footer is drawn over the second line ("Codex not found: install it, or set its
+        # program in the skin's variables" on a 320 px card). One line advances 18 px, two lines (30 px) 34 px.
+        error = json.dumps({"ok": False, "error": "nocli", "message": ""})
+
+        def footer_y(*extra: str) -> int:
+            out = lua("answer", "mCodex", error, *extra).splitlines()
+            ys = [line.split("\t")[-1] for line in out if line.startswith("BANG\t!SetOption\tFooter\tY\t")]
+            self.assertEqual(len(ys), 1, out)
+            return int(ys[0])
+
+        self.assertEqual(footer_y("var:h:Status2=30") - footer_y(), 16)
+
     def test_an_answer_sets_the_meters_and_redraws(self) -> None:
         out = lua("answer", "mClaude", json.dumps({"ok": True, "rows": CLAUDE_ROWS})).splitlines()
         self.assertIn("BANG\t!SetOption\tRow1Label\tText\tSession (5hr)", out)

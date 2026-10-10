@@ -35,6 +35,10 @@ function RM.measure_string(name)
     return m and m:GetStringValue() or ""
 end
 function RM.bang(...) SKIN:Bang(...) end
+function RM.meter_height(name)
+    local m = SKIN:GetMeter(name)
+    return m and m:GetH() or nil
+end
 
 -- ---- JSON: the helper's one line (objects, arrays, strings with escapes, numbers, true, false, null) ----------
 local json = { null = setmetatable({}, { __tostring = function() return "null" end }) }
@@ -231,7 +235,7 @@ local function level_color(percent, warn, critical)
 end
 
 -- Returns the list of placements the renderer applies; pure, so the tests can read it.
-function Layout(now)
+function Layout(now, heights)
     local out = {}
     local y = tonumber(RM.var("PadTop", "12")) + 26
     local row_h = tonumber(RM.var("RowH", "46"))
@@ -271,7 +275,9 @@ function Layout(now)
                 local status = string.format(fmt, p.cli, ans.message or "")
                 if ans.error == "nologin" then status = string.format(fmt, p.cli) end
                 out[#out + 1] = { "status", "Status" .. si, y, status }
-                y = y + 18
+                -- the message wraps (ClipString=2): Render passes the height Rainmeter measured, one line is 14
+                local h = heights and heights["Status" .. si] or 14
+                y = y + math.max(18, h + 4)
             end
             if at and (not oldest or at < oldest) then oldest = at end
             y = y + 6
@@ -297,7 +303,22 @@ function Layout(now)
 end
 
 function Render()
-    for _, item in ipairs(Layout(os.time())) do
+    local now = os.time()
+    local items = Layout(now)
+    -- A message wraps, and only Rainmeter knows how tall it came out: give each its text, let Rainmeter measure it,
+    -- then lay out again with the heights, or what follows is drawn over its second line.
+    local heights
+    for _, item in ipairs(items) do
+        if item[1] == "status" then
+            RM.bang("!SetOption", item[2], "Text", item[4])
+            RM.bang("!ShowMeter", item[2])
+            RM.bang("!UpdateMeter", item[2])
+            heights = heights or {}
+            heights[item[2]] = RM.meter_height(item[2])
+        end
+    end
+    if heights then items = Layout(now, heights) end
+    for _, item in ipairs(items) do
         local kind = item[1]
         if kind == "show" then
             RM.bang("!SetOption", item[2], "Y", tostring(item[3]))
