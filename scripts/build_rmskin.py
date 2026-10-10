@@ -7,7 +7,9 @@ little-endian int64, one zero flags byte and ``RMSKIN`` with its terminator (Rai
 Library/DialogPackage.cpp and DialogInstall.cpp). The skin's files come from rainmeter/AiSessionUsage/, and the
 helper from src/contents/code/ (the one copy, the same files the Plasma widget runs), into @Resources/code/.
 Reproducible like the .plasmoid: entries sorted, one timestamp, stored uncompressed, the version from
-src/metadata.json. Refuses compiled Python in the tree.
+src/metadata.json. Refuses compiled Python in the tree. One transform on the way in: the Lua script is written as
+UTF-16 LE with its byte order mark, the encoding Rainmeter needs to read Unicode from a script (a .lua without it is
+read in the ANSI code page, which garbled the middle dot); Source keeps it as ASCII, which lua5.1 runs in the tests.
 
 Usage: build_rmskin.py [--out DIR]    (default: dist/)
 Prints the two paths it wrote, one per line; exit 1 with a message on any refusal.
@@ -58,6 +60,26 @@ def entries() -> list[tuple[str, Path]]:
     return sorted(found)
 
 
+def packed(name: str, path: Path) -> bytes:
+    """
+    A file's bytes as the package carries them.
+
+    Args:
+        name: The path in the zip; a name ending in ``.lua`` is a Rainmeter script.
+        path: The file in Source (a script there is UTF-8, in practice ASCII).
+
+    Returns:
+        A script as UTF-16 LE with its byte order mark, the encoding Rainmeter reads Unicode from; any other
+        file's bytes unchanged.
+
+    Raises:
+        UnicodeDecodeError: A script in Source that is not UTF-8.
+    """
+    if name.endswith(".lua"):
+        return b"\xff\xfe" + path.read_text(encoding="utf-8").encode("utf-16-le")
+    return path.read_bytes()
+
+
 def rmskin_ini(version: str) -> str:
     """The installer's manifest (CRLF, as Rainmeter writes it)."""
     lines = ["[rmskin]", f"Name={NAME}", "Author=chaybits", f"Version={version}", "LoadType=Skin",
@@ -88,7 +110,7 @@ def build(out: Path) -> tuple[Path, Path]:
             info = zipfile.ZipInfo(name, date_time=FIXED_TIME)
             info.compress_type = zipfile.ZIP_STORED
             info.external_attr = FILE_MODE
-            archive.writestr(info, path.read_bytes())
+            archive.writestr(info, packed(name, path))
     zip_size = target.stat().st_size
     with target.open("ab") as f:
         f.write(struct.pack("<q", zip_size) + b"\0" + FOOTER_KEY)

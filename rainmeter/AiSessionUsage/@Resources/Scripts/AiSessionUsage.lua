@@ -140,13 +140,19 @@ function json.decode(s)
 end
 
 -- ---- time: the helper's ISO 8601 UTC reset times against the clock ------------------------------------------
+local function days_from_civil(y, m, d)
+    -- days from 1970-01-01 to a Gregorian date (Howard Hinnant's algorithm): plain arithmetic, no time zone
+    if m <= 2 then y = y - 1 end
+    local era = math.floor(y / 400)
+    local yoe = y - era * 400
+    local doy = math.floor((153 * ((m + 9) % 12) + 2) / 5) + d - 1
+    local doe = yoe * 365 + math.floor(yoe / 4) - math.floor(yoe / 100) + doy
+    return era * 146097 + doe - 719468
+end
 local function utc_epoch(y, mo, d, h, mi, s)
-    -- os.time reads a table as local time; the gap between the local and the UTC reading of one instant
-    -- corrects it (DST included, since both readings carry the same instant)
-    local t = os.time({ year = y, month = mo, day = d, hour = h, min = mi, sec = s, isdst = false })
-    local as_local, as_utc = os.date("*t", t), os.date("!*t", t)
-    as_local.isdst, as_utc.isdst = false, false
-    return t + (os.time(as_local) - os.time(as_utc))
+    -- not os.time, which reads a table as local time: correcting that by the gap between the local and the UTC
+    -- reading counted summer time twice, and every reset read an hour late under it
+    return days_from_civil(y, mo, d) * 86400 + h * 3600 + mi * 60 + s
 end
 local function parse_iso(iso)
     if type(iso) ~= "string" then return nil end

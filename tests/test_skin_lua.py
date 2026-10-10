@@ -20,7 +20,7 @@ NOW = 1_760_000_000  # 2025-10-09T08:53:20+00:00
 
 def lua(*args: str, env: dict | None = None) -> str:
     done = subprocess.run([LUA, str(HARNESS), str(SCRIPT), *args], capture_output=True, text=True, timeout=30,
-                          env=dict(os.environ, TZ="Europe/Istanbul", **(env or {})))
+                          env={**os.environ, "TZ": "Europe/Istanbul", **(env or {})})
     if done.returncode != 0:
         raise AssertionError(f"lua failed: {done.stderr}")
     return done.stdout.rstrip("\n")
@@ -73,6 +73,14 @@ class TestResetText(unittest.TestCase):
         self.assertEqual(lua("reset", "2025-10-09T08:53:30+00:00", str(NOW)), "Resets now")
         self.assertEqual(lua("reset", "2025-10-09T08:00:00+00:00", str(NOW)), "Reset passed")
         self.assertEqual(lua("reset", "junk", str(NOW)), "")
+
+    def test_summer_time_is_counted_once(self) -> None:
+        # Istanbul has had no summer time since 2016, so the tests above cannot see it: under London's summer time
+        # every reset read an hour late in Rainmeter. NOW (2025-10-09) is summer time in all three zones.
+        reset = "2025-10-09T10:53:20+00:00"
+        for tz, clock in (("Europe/London", "11:53"), ("America/New_York", "06:53"), ("Australia/Sydney", "21:53")):
+            with self.subTest(tz=tz):
+                self.assertEqual(lua("reset", reset, str(NOW), env={"TZ": tz}), f"Resets in 2h 0m \u00b7 {clock}")
 
     def test_a_fractional_second_and_a_z_suffix_are_read(self) -> None:
         self.assertEqual(lua("reset", "2025-10-09T10:53:20.123456Z", str(NOW)), "Resets in 2h 0m \u00b7 13:53")

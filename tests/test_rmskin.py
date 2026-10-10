@@ -73,6 +73,16 @@ class TestRmskin(unittest.TestCase):
         self.assertNotIn("\N{EM DASH}", ini)
         self.assertNotIn("\N{EM DASH}", (SKIN / "@Resources/Scripts/AiSessionUsage.lua").read_text(encoding="utf-8"))
 
+    def test_the_script_ships_as_utf16_so_rainmeter_reads_unicode(self) -> None:
+        # Rainmeter reads a .lua without the UTF-16 LE byte order mark in the ANSI code page, so the middle dot of the
+        # reset and footer texts showed as two wrong characters. Its docs: encode the .lua file as UTF-16, never UTF-8.
+        name = "Skins/AiSessionUsage/@Resources/Scripts/AiSessionUsage.lua"
+        with zipfile.ZipFile(self.rmskin) as archive:
+            packed = archive.read(name)
+        self.assertEqual(packed[:2], b"\xff\xfe", "UTF-16 LE with its byte order mark")
+        source = (SKIN / "@Resources/Scripts/AiSessionUsage.lua").read_text(encoding="utf-8")
+        self.assertEqual(packed[2:].decode("utf-16-le"), source, "the same text as the one copy in Source")
+
     def test_checksum_matches_and_two_builds_are_byte_identical(self) -> None:
         digest, name = self.checksum.read_text(encoding="utf-8").split()
         self.assertEqual((name, digest), (self.rmskin.name, hashlib.sha256(self.data).hexdigest()))
