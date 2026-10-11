@@ -14,7 +14,7 @@
         "Id": "io.github.chaybits.aisessionusage",
         "License": "GPL-3.0-or-later",
         "Name": "AI Session Usage",
-        "Version": "0.1.0",
+        "Version": "0.1.1",
         "Website": "https://github.com/chaybits/ai-session-usage"
     },
     "X-Plasma-API-Minimum-Version": "6.0"
