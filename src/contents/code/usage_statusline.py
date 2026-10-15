@@ -141,7 +141,7 @@ def run(credentials: Path | None, path: Path | None = None) -> dict:
     Returns:
         The result object for ``emit``.
     """
-    # the login first: a status file left behind by /logout must not keep the section alive (D4)
+    # the login first: a status file left behind by /logout must not keep the section alive
     login = credentials or usage_claude.default_credentials()
     if not login.exists():
         return {"ok": False, "error": "nologin", "message": f"{login} not found"}

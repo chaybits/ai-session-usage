@@ -1,6 +1,8 @@
-# The helper and logic tests on every push and pull request. The QML load tests need Plasma 6 and report
-# SKIPPED here; they run on a Plasma desktop through tests/run_all.sh.
-# permissions: {} at the top and contents: read for the one job (least privilege, A1); actions pinned by SHA (A2).
+# The helper and logic tests on every push and pull request, on Linux; the Widgets Board package on Windows (its
+# C# logic under dotnet test, then the Store package built for real and kept as an artifact for 14 days). The QML
+# load tests need Plasma 6 and report SKIPPED on the Linux runner; they run on a Plasma desktop through
+# tests/run_all.sh.
+# permissions: {} at the top and contents: read for each job (least privilege, A1); actions pinned by SHA (A2).
 name: tests
 
 on:
@@ -27,5 +29,37 @@ jobs:
           node-version: lts/*
       - name: Lua 5.1 (the Rainmeter skin's script is tested under it; without it that suite only skips)
         run: sudo apt-get update -qq && sudo apt-get install -y -qq lua5.1
+      - name: Pillow (the staging test reads the picker screenshot)
+        run: python3 -m pip install --quiet pillow
       - name: Tests
         run: bash tests/run_all.sh
+
+  widgets-board:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: .NET 10 SDK
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: "10.0.x"
+      - name: MSBuild (Visual Studio 2026 on this runner, with the single-project MSIX tools)
+        uses: microsoft/setup-msbuild@30375c66a4eea26614e0d39710365f22f8b0af57 # v3
+      - name: Stage the helper and Python's embeddable package (checksum verified)
+        run: python -B scripts/build_msix.py --stage-only
+      - name: The Widgets Board logic tests (from widgets-board/, whose global.json opts dotnet test into Microsoft.Testing.Platform)
+        working-directory: widgets-board
+        run: dotnet test AiSessionUsage.Core.Tests
+      - name: Build the Store package (unsigned .msixupload; the Store signs it)
+        run: python -B scripts/build_msix.py --store --out dist
+      - name: Keep the package
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: widgets-board-msixupload
+          path: |
+            dist/*.msixupload
+            dist/*.msixupload.sha256
+          retention-days: 14
+          if-no-files-found: error

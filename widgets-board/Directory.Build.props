@@ -1,0 +1,14 @@
+<Project>
+  <!-- Shared by the three projects under widgets-board/: the provider app, its logic library and the library's tests. -->
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <Deterministic>true</Deterministic>
+    <Authors>chaybits</Authors>
+    <Copyright>chaybits, GPL-3.0-or-later</Copyright>
+  </PropertyGroup>
+</Project>

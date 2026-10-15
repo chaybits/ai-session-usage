@@ -1,0 +1,60 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The Widgets Board provider: a windowless packaged app (single-project MSIX) that serves the AI Session Usage
+       widget. The helper and Python's embeddable package are staged by scripts/build_msix.py into
+       build/widgets-board/stage/ and taken from there (StageDir); the logic is AiSessionUsage.Core. -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.22621.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.22621.0</TargetPlatformMinVersion>
+    <SupportedOSPlatformVersion>10.0.22621.0</SupportedOSPlatformVersion>
+    <RootNamespace>AiSessionUsage</RootNamespace>
+    <AssemblyName>AiSessionUsage</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Platforms>x64</Platforms>
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+    <UseWinUI>false</UseWinUI>
+    <EnableMsixTooling>true</EnableMsixTooling>
+    <!-- The package's language, set here rather than taken from the building machine's culture: a Windows with the
+         "English (World)" format (en-001) fails the package build with APPX1685 (seen in the VM, 2026-10-12). -->
+    <DefaultLanguage>en-US</DefaultLanguage>
+    <PublishProfile>Properties\PublishProfiles\win-$(Platform).pubxml</PublishProfile>
+    <AppxPackageSigningEnabled>false</AppxPackageSigningEnabled>
+    <GenerateAppxPackageOnBuild>false</GenerateAppxPackageOnBuild>
+    <AppxBundle>Never</AppxBundle>
+    <StageDir Condition="'$(StageDir)' == ''">$(MSBuildThisFileDirectory)..\..\build\widgets-board\stage\</StageDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="Assets\*.png" />
+    <Content Include="ProviderAssets\*.png" />
+    <Content Include="Templates\*.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="$(StageDir)python\**" Link="python\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="$(StageDir)code\**" Link="code\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- Only the Windows App SDK components the provider uses: the Widgets API, and Runtime, which declares the package's
+       dependency on the Windows App Runtime framework package (the Store installs it). The metapackage
+       Microsoft.WindowsAppSDK would add AI, ML, WinUI and more: DirectML and ONNX Runtime alone are 17 MB of the
+       package (measured 2026-10-12, D22). -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.WindowsAppSDK.Widgets" Version="2.0.5" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.Runtime" Version="2.5.1" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2705" />
+    <ProjectReference Include="..\AiSessionUsage.Core\AiSessionUsage.Core.csproj" />
+  </ItemGroup>
+
+  <!-- The Msix capability and the menu property, as in the official widget sample, so the packaging tools treat the
+       project as packaged before the Windows App SDK package is restored. -->
+  <ItemGroup Condition="'$(DisableMsixProjectCapabilityAddedByProject)'!='true' and '$(EnableMsixTooling)'=='true'">
+    <ProjectCapability Include="Msix" />
+  </ItemGroup>
+  <PropertyGroup Condition="'$(DisableHasPackageAndPublishMenuAddedByProject)'!='true' and '$(EnableMsixTooling)'=='true'">
+    <HasPackageAndPublishMenu>true</HasPackageAndPublishMenu>
+  </PropertyGroup>
+
+  <!-- A build without the staged helper would package a widget that can never answer: refuse it. -->
+  <Target Name="RequireStagedHelper" BeforeTargets="BeforeBuild">
+    <Error Condition="!Exists('$(StageDir)python\python.exe') or !Exists('$(StageDir)code\fetch_usage.py')"
+           Text="The helper is not staged: run python3 -B scripts/build_msix.py --stage-only first (StageDir=$(StageDir))" />
+  </Target>
+</Project>

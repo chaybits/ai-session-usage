@@ -4,8 +4,8 @@ Shared by the two Claude sources: ``usage_claudecode`` (Claude Code asked for it
 ``rate_limits`` of its ``get_usage`` answer) and ``usage_statusline`` (the same row ids, so a row hidden or
 moved in the settings stays that row whichever source is used). Also Claude Code's default login path, which
 those sources only check for existence. Until 2026-10-08 this module also read the login token and asked
-Anthropic's usage endpoint itself; that source is gone (docs/ARCHITECTURE.md D18; the git tag
-``endpoint-source-last`` and ``archive/endpoint-source-20261008/`` keep it).
+Anthropic's usage endpoint itself; that source is gone; the git tag
+``endpoint-source-last`` keeps it.
 """
 from __future__ import annotations
 

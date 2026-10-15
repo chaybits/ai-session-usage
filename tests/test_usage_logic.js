@@ -62,7 +62,7 @@ test("B-06 parseOutput: a row that is not a row is badoutput, not a healthy answ
 });
 
 test("B-01 a CLI that gave no usable answer retries fast, doubling up to the poll interval", () => {
-    // the one transient failure the helper can report since the CLIs are asked directly (D16, D20): offline,
+    // the one transient failure the helper can report since the CLIs are asked directly: offline,
     // a server error, a crash, all `cli`; a helper the watchdog ended is `timeout`
     for (const kind of ["cli", "timeout"]) {
         const fail = { ok: false, error: kind };

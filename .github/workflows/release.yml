@@ -1,7 +1,9 @@
 # Builds the installable packages from a version tag and drafts the GitHub release with them: the .plasmoid
-# (KDE Plasma) and the .rmskin (Windows, Rainmeter), each with its SHA-256 file and a build-provenance attestation. Publishing the draft is a human step, after a look at the
-# assets. The tag must name the version in src/metadata.json, so the two can never disagree.
-# permissions: {} at the top and only what the one job needs (least privilege); actions pinned by SHA.
+# (KDE Plasma) and the .rmskin (Windows, Rainmeter) on Linux, the Widgets Board package (Windows, an unsigned
+# .msixupload for the Microsoft Store, which signs it) on Windows, each with its SHA-256 file and a build-provenance
+# attestation. Publishing the draft is a human step, after a look at the assets; the .msixupload is what the user
+# uploads to Partner Center. The tag must name the version in src/metadata.json, so the two can never disagree.
+# permissions: {} at the top and only what each job needs (least privilege); actions pinned by SHA.
 name: release
 
 on:
@@ -11,7 +13,42 @@ on:
 permissions: {}
 
 jobs:
+  widgets-board:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: The tag names the version in metadata.json
+        shell: bash
+        run: |
+          version="$(python -c 'import json; print(json.load(open("src/metadata.json"))["KPlugin"]["Version"])')"
+          test "${GITHUB_REF_NAME}" = "v${version}" || { echo "tag ${GITHUB_REF_NAME}, but metadata.json says ${version}"; exit 1; }
+      - name: .NET 10 SDK
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: "10.0.x"
+      - name: MSBuild (Visual Studio 2026 on this runner, with the single-project MSIX tools)
+        uses: microsoft/setup-msbuild@30375c66a4eea26614e0d39710365f22f8b0af57 # v3
+      - name: Stage the helper and Python's embeddable package (checksum verified)
+        run: python -B scripts/build_msix.py --stage-only
+      - name: The Widgets Board logic tests (from widgets-board/, whose global.json opts dotnet test into Microsoft.Testing.Platform)
+        working-directory: widgets-board
+        run: dotnet test AiSessionUsage.Core.Tests
+      - name: Build the Store package
+        run: python -B scripts/build_msix.py --store --out dist
+      - name: Hand the package to the release job
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: widgets-board-msixupload
+          path: |
+            dist/*.msixupload
+            dist/*.msixupload.sha256
+          if-no-files-found: error
+
   release:
+    needs: widgets-board
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -30,13 +67,20 @@ jobs:
           node-version: lts/*
       - name: Lua 5.1
         run: sudo apt-get update -qq && sudo apt-get install -y -qq lua5.1
+      - name: Pillow (the staging test reads the picker screenshot)
+        run: python3 -m pip install --quiet pillow
       - name: Tests (a tag on a commit whose suite fails drafts nothing; the Plasma suites skip here)
         run: bash tests/run_all.sh
       - name: Build the packages
         run: |
           python3 -B scripts/build_plasmoid.py
           python3 -B scripts/build_rmskin.py
-      - name: Verify the checksum
+      - name: Take the Widgets Board package
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: widgets-board-msixupload
+          path: dist
+      - name: Verify the checksums
         run: cd dist && sha256sum -c ./*.sha256
       - name: Attest the build provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
@@ -44,10 +88,11 @@ jobs:
           subject-path: |
             dist/*.plasmoid
             dist/*.rmskin
+            dist/*.msixupload
       - name: Draft the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "${GITHUB_REF_NAME}" --draft --verify-tag --title "${GITHUB_REF_NAME}" \
-            --notes "KDE Plasma 6: download the .plasmoid, check it with sha256sum -c against its .sha256 file, then kpackagetool6 --type Plasma/Applet --install ai-session-usage-*.plasmoid (or --upgrade over an earlier version). Windows: the .rmskin, opened by Rainmeter's Skin Installer. Details in the README." \
-            dist/*.plasmoid dist/*.rmskin dist/*.sha256
+            --notes "KDE Plasma 6: download the .plasmoid, check it with sha256sum -c against its .sha256 file, then kpackagetool6 --type Plasma/Applet --install ai-session-usage-*.plasmoid (or --upgrade over an earlier version). Windows: the .rmskin, opened by Rainmeter's Skin Installer; the Widgets Board version comes from the Microsoft Store (the .msixupload here is the package as submitted). Details in the README." \
+            dist/*.plasmoid dist/*.rmskin dist/*.msixupload dist/*.sha256

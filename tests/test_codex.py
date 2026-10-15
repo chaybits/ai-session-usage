@@ -204,7 +204,7 @@ class TestCodexSource(Sandbox):
         self.login()
         sys.path.insert(0, str(CODE))
         self.addCleanup(sys.path.remove, str(CODE))
-        sys.dont_write_bytecode = True  # an in-process import must not leave a __pycache__ in the package (D17)
+        sys.dont_write_bytecode = True  # an in-process import must not leave a __pycache__ in the package
         import usage_codex
         saved = (usage_codex.TIMEOUT_S, dict(os.environ))
         self.addCleanup(lambda: (setattr(usage_codex, "TIMEOUT_S", saved[0]), os.environ.clear(), os.environ.update(saved[1])))

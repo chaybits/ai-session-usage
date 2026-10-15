@@ -2,7 +2,9 @@
 
 [English](README.md) | Türkçe
 
-Claude Code ve ChatGPT (Codex) abonelik limitlerinizi sıfırlanma zamanlarıyla birlikte gösteren bir KDE Plasma 6 bileşeni (widget) ve bir Windows Rainmeter skin'i.
+![](docs/00-banner.jpg)
+
+Claude Code ve ChatGPT (Codex) abonelik limitlerinizi sıfırlanma zamanlarıyla birlikte gösteren bir KDE Plasma 6 bileşeni (widget), bir Rainmeter skin'i ya da bir Windows 11 Pencere Öğeleri (Widgets Board) bileşeni.
 
 ![KDE Plasma masaüstünde kart: Claude'un Session (5hr), Weekly (7 day) ve Weekly (Fable) satırları ile iki ChatGPT satırı; her birinde yüzde, çubuk ve sıfırlanma zamanı. Örnek değerler.](docs/01-claude-and-chatgpt.png)
 
@@ -10,7 +12,7 @@ Claude Code ve ChatGPT (Codex) abonelik limitlerinizi sıfırlanma zamanlarıyla
 
 Gerekenler:
 
-- `PATH` üzerinde Python 3.9 veya üstü (Linux'ta `python3`, Windows'ta `python` adıyla).
+- `PATH` üzerinde Python 3.9 veya üstü (Linux'ta `python3`, Windows'ta `python` adıyla). Pencere Öğeleri sürümü kendi Python'uyla gelir.
 - Claude aboneliğiyle giriş yapılmış Claude Code, ya da ChatGPT hesabıyla giriş yapılmış Codex CLI. Biri yeter; giriş yapılmamış sağlayıcı gösterilmez.
 
 Ek bağımlılık yok: yardımcı program yalnızca Python standart kütüphanesini kullanır.
@@ -40,6 +42,12 @@ Sonra `.rmskin` dosyasını açın: Rainmeter'ın **Skin Installer** penceresi p
 
 ![Aynı kart, Windows masaüstünde Rainmeter skin'i olarak. Örnek değerler.](docs/02-windows.png)
 
+### Windows 11 (Pencere Öğeleri)
+
+**AI Session Usage** uygulamasını Microsoft Store'dan kurun; sonra Pencere Öğeleri panosunu (Widgets Board, Win+W) açın, pencere öğesi eklemek için **+** düğmesine tıklayın ve **AI Session Usage** bileşenini sabitleyin. Python paketin içindedir; bilgisayarda giriş yapılmış bir Claude Code ya da Codex CLI bulunmalıdır. Küçük boy her servisten bir satır, orta boy her servisten iki satır, büyük boy ise tüm satırları sıfırlanma zamanlarıyla gösterir. Bileşene tıklayınca araçlara hemen yeniden sorulur; bunun dışında araçlara, bileşen panoda göründüğü sürece beş dakikada bir sorulur.
+
+![Windows 11'in Pencere Öğeleri panosunda bileşen: Claude ve ChatGPT satırları, her birinde yüzde, çubuk ve sıfırlanma zamanı. Örnek değerler.](docs/07-widgets-board.png)
+
 ### Kaynaktan
 
 Depoyu klonladıysanız `python3 scripts/build_plasmoid.py` aynı `.plasmoid` paketini `dist/` içine yazar; ya da `src` klasörünü doğrudan `kpackagetool6 --type Plasma/Applet --install src` ile kurun. Geliştirme için `src` klasörünü sembolik bağlantıyla (symlink) bağlayın; böylece değişiklikler `systemctl --user restart plasma-plasmashell.service` sonrasında hemen geçerli olur:
@@ -48,7 +56,7 @@ Depoyu klonladıysanız `python3 scripts/build_plasmoid.py` aynı `.plasmoid` pa
 ln -s "$PWD/src" ~/.local/share/plasma/plasmoids/io.github.chaybits.aisessionusage
 ```
 
-Windows'ta `python scripts/build_rmskin.py` aynı `.rmskin` paketini `dist/` içine yazar.
+Windows'ta `python scripts/build_rmskin.py` aynı `.rmskin` paketini `dist/` içine yazar. Pencere Öğeleri sürümünün paketi için `python scripts/build_msix.py --stage-only` (her sistemde) Python'un gömülebilir (embeddable) paketini indirir, SHA-256 özetini denetler ve yardımcı programla birlikte hazırlar. Visual Studio 2026 (ya da WinUI derleme araçlarıyla Build Tools) kurulu bir Windows'ta `python scripts/build_msix.py --sideload cert.pfx`, yandan yükleme (sideload) için imzalı bir `.msix` üretir: Geliştirici Modu açık olmalı, sertifikanın Subject alanı da paket bildirimindeki (manifest) Publisher değeriyle aynı olmalıdır. `--store` ise Store'un kabul ettiği imzasız `.msixupload` dosyasını üretir.
 
 ## Kullanım
 
@@ -115,11 +123,11 @@ python3 -B ~/.local/share/plasma/plasmoids/io.github.chaybits.aisessionusage/con
 
 ### Windows
 
-Windows'ta ayarlar skin'in değişkenleridir: Rainmeter'ın **Manage** (yönet) penceresinde skin'i seçin, **Edit** (düzenle) düğmesine tıklayın, bir değeri değiştirin, kaydedin ve **Refresh** (yenile) düğmesine tıklayın. Değişkenler: `RefreshMinutes` (5), `ShowClaude` ve `ShowCodex` (1; gizlemek için 0), `ClaudeSource` (`claudecode` ya da `statusline`), `ClaudeProgram` ve `CodexProgram` (boş: `PATH` üzerinde aranır), `WarnPercent` (80), `CriticalPercent` (95), `StaleMinutes` (15) ve renkler. Durum satırı kaynağı için aynı `statusLine` girdisi `%USERPROFILE%\.claude\settings.json` dosyasına, betiğin skin'deki kopyasını gösterecek biçimde eklenir: `Documents\Rainmeter\Skins\AiSessionUsage\@Resources\code\statusline_tap.py` (JSON içinde her ters eğik çizgiyi iki kez yazın); sayılar `%LOCALAPPDATA%\ai-session-usage\claude-statusline.json` dosyasında tutulur.
+Windows'ta ayarlar skin'in değişkenleridir: Rainmeter'ın **Manage** (yönet) penceresinde skin'i seçin, **Edit** (düzenle) düğmesine tıklayın, bir değeri değiştirin, kaydedin ve **Refresh** (yenile) düğmesine tıklayın. Değişkenler: `RefreshMinutes` (5), `ShowClaude` ve `ShowCodex` (1; gizlemek için 0), `ClaudeSource` (`claudecode` ya da `statusline`), `ClaudeProgram` ve `CodexProgram` (boş: `PATH` üzerinde aranır), `WarnPercent` (80), `CriticalPercent` (95), `StaleMinutes` (15) ve renkler. Durum satırı kaynağı için aynı `statusLine` girdisi `%USERPROFILE%\.claude\settings.json` dosyasına, betiğin skin'deki kopyasını gösterecek biçimde eklenir: `Documents\Rainmeter\Skins\AiSessionUsage\@Resources\code\statusline_tap.py` (JSON içinde her ters eğik çizgiyi iki kez yazın); sayılar `%LOCALAPPDATA%\ai-session-usage\claude-statusline.json` dosyasında tutulur. Pencere Öğeleri sürümünde ayar yoktur: iki servis de gösterilir ve Claude Code'a doğrudan sorulur.
 
 ## Gizlilik
 
-Bileşen kendi adına hiçbir bağlantı açmaz. Çalıştırdığı iki komut satırı aracı, her biri kendi girişiyle, kendi servisine bağlanır. Hiçbir giriş dosyası okunmaz; her birinin yalnızca var olup olmadığına bakılır, böylece o aracı olmayan biri onun bölümünü görmez. Durum satırı kipinde yalnızca yüzdeleri ve sıfırlanma zamanlarını tutan tek bir önbellek dosyası yazılır. Bir yenileme istem göndermez ve konuşma açmaz; dolayısıyla gösterdiği limitlerden hiçbirini harcamaz. Windows skin'i aynı yardımcı programı çalıştırır; bu güvenceler orada da geçerlidir.
+Bileşen kendi adına hiçbir bağlantı açmaz. Çalıştırdığı iki komut satırı aracı, her biri kendi girişiyle, kendi servisine bağlanır. Hiçbir giriş dosyası okunmaz; her birinin yalnızca var olup olmadığına bakılır, böylece o aracı olmayan biri onun bölümünü görmez. Durum satırı kipinde yalnızca yüzdeleri ve sıfırlanma zamanlarını tutan tek bir önbellek dosyası yazılır. Bir yenileme istem göndermez ve konuşma açmaz; dolayısıyla gösterdiği limitlerden hiçbirini harcamaz. Windows skin'i ve Pencere Öğeleri bileşeni aynı yardımcı programı çalıştırır; bu güvenceler orada da geçerlidir. Pencere Öğeleri bileşeni ayrıca kendi çalıştırmalarının küçük bir günlüğünü (zamanlamalar ve hata türleri; kullanım sayıları yazılmaz) `%LOCALAPPDATA%\ai-session-usage\` altında tutar.
 
 ### Her kaynak nasıl çalışır
 
@@ -137,8 +145,8 @@ Bu proje Anthropic ya da OpenAI'nin resmi bir ürünü değildir. İlgili servis
 
 - Bileşen her iki araçtan da, geliştiricilerinin deneysel saydığı ya da yalnızca kendi istemcileri (client) için belgelediği istekler yoluyla veri alır; biri değişirse ilgili bölüm, bileşen güncellenene kadar "Unexpected answer" (beklenmeyen yanıt) gösterir.
 - Claude Code'un durum satırından alınan sayılar Claude Code'un son yanıtı kadar tazedir: çalışan bir oturum yokken oldukları gibi kalır ve görüldükleri zamanla birlikte gösterilir; sıfırlanma zamanı geçmiş bir pencere, Claude Code onu yeniden bildirene dek %0 gösterir. Durum satırı yalnızca 5 saatlik ve haftalık limitleri taşır; modele özel limitler için varsayılan kaynak olan Claude Code'un kendisi gerekir.
-- Desteklenen platformlar: Linux'ta KDE Plasma 6, Windows'ta Rainmeter. macOS desteklenmez: orada Claude Code girişi Anahtar Zinciri'nde (Keychain) tuttuğu için giriş dosyası denetimi hiçbir şey bulamaz.
-- Windows'ta skin saatleri bölgesel ayarlardan bağımsız olarak 24 saatlik biçimde gösterir; satır sırası, panel biçimi ve ayar sayfaları yoktur: bunlar Plasma bileşenine özgüdür.
+- Desteklenen platformlar: Linux'ta KDE Plasma 6, Windows'ta Rainmeter ya da Windows 11 Pencere Öğeleri. macOS desteklenmez: orada Claude Code girişi Anahtar Zinciri'nde (Keychain) tuttuğu için giriş dosyası denetimi hiçbir şey bulamaz.
+- Windows'ta skin saatleri bölgesel ayarlardan bağımsız olarak 24 saatlik biçimde gösterir; satır sırası, panel biçimi ve ayar sayfaları yoktur: bunlar Plasma bileşenine özgüdür. Pencere Öğeleri bileşeninde de ayar yoktur; güncelliğini yitirmiş sayıları renk yerine bir notla işaretler ve yalnızca Pencere Öğeleri panosunda görünürken yenilenir.
 - Yalnızca abonelik girişleri desteklenir: API anahtarıyla yapılan girişin gösterilecek abonelik limiti yoktur.
 - ChatGPT için satırlar, giriş yapılmış Codex CLI'nin bildirdiği limitlerdir; sıradan ChatGPT sohbetinin mesaj sınırları bunların arasında değildir.
 - Başka yerde yapılan kullanım (claude.ai, ChatGPT uygulamaları) aynı limitlerden düşer, ancak bir sonraki yenilemede görünür: en geç bir yenileme aralığı sonra, ya da tıklayarak hemen.

@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The package manifest. Identity Name and Publisher are the values Partner Center shows under Product identity
+     (Package/Identity/Name, Package/Identity/Publisher); PublisherDisplayName likewise. Version is the program's
+     version with a fourth part of 0, which the Store owns (tests/test_msix_stage.py checks it against
+     src/metadata.json). The widget provider and its COM server are in Extensions; runFullTrust is what an
+     out-of-process COM server in a packaged app needs. -->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  xmlns:com="http://schemas.microsoft.com/appx/manifest/com/windows10"
+  IgnorableNamespaces="uap uap3 rescap com">
+
+  <Identity
+    Name="chaybits.AISessionUsage"
+    Publisher="CN=B93E2CC9-B51E-47F6-93A3-00C21D60EB54"
+    Version="0.1.2.0" />
+
+  <Properties>
+    <DisplayName>AI Session Usage</DisplayName>
+    <PublisherDisplayName>chaybits</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.22621.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="x-generate" />
+  </Resources>
+
+  <Applications>
+    <Application Id="App" Executable="$targetnametoken$.exe" EntryPoint="$targetentrypoint$">
+      <uap:VisualElements
+        DisplayName="AI Session Usage"
+        Description="Your Claude Code and ChatGPT (Codex) subscription limits as a widget on the Widgets Board."
+        BackgroundColor="transparent"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png">
+        <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" />
+        <uap:SplashScreen Image="Assets\SplashScreen.png" />
+      </uap:VisualElements>
+      <Extensions>
+        <com:Extension Category="windows.comServer">
+          <com:ComServer>
+            <com:ExeServer Executable="AiSessionUsage.exe" Arguments="-RegisterProcessAsComServer" DisplayName="AI Session Usage widget provider">
+              <com:Class Id="7B9E2C6A-5D41-4F8B-9C33-2A1F6E0D8B57" DisplayName="AI Session Usage widget provider" />
+            </com:ExeServer>
+          </com:ComServer>
+        </com:Extension>
+        <uap3:Extension Category="windows.appExtension">
+          <uap3:AppExtension Name="com.microsoft.windows.widgets" DisplayName="AI Session Usage" Id="io.github.chaybits.aisessionusage" PublicFolder="Public">
+            <uap3:Properties>
+              <WidgetProvider>
+                <ProviderIcons>
+                  <Icon Path="ProviderAssets\ProviderIcon.png" />
+                </ProviderIcons>
+                <Activation>
+                  <CreateInstance ClassId="7B9E2C6A-5D41-4F8B-9C33-2A1F6E0D8B57" />
+                </Activation>
+                <Definitions>
+                  <Definition Id="AiSessionUsage"
+                    DisplayName="AI Session Usage"
+                    Description="Claude Code and ChatGPT (Codex) subscription limits, with reset times."
+                    AllowMultiple="false">
+                    <Capabilities>
+                      <Capability>
+                        <Size Name="small" />
+                      </Capability>
+                      <Capability>
+                        <Size Name="medium" />
+                      </Capability>
+                      <Capability>
+                        <Size Name="large" />
+                      </Capability>
+                    </Capabilities>
+                    <ThemeResources>
+                      <Icons>
+                        <Icon Path="ProviderAssets\WidgetIcon.png" />
+                      </Icons>
+                      <Screenshots>
+                        <Screenshot Path="ProviderAssets\WidgetScreenshot.png" DisplayAltText="The widget with the Claude and ChatGPT limits, each with a bar and its reset time" />
+                      </Screenshots>
+                      <DarkMode>
+                        <Icons>
+                          <Icon Path="ProviderAssets\WidgetIcon.png" />
+                        </Icons>
+                        <Screenshots>
+                          <Screenshot Path="ProviderAssets\WidgetScreenshotDark.png" DisplayAltText="The widget with the Claude and ChatGPT limits, each with a bar and its reset time" />
+                        </Screenshots>
+                      </DarkMode>
+                      <LightMode>
+                        <Icons>
+                          <Icon Path="ProviderAssets\WidgetIcon.png" />
+                        </Icons>
+                        <Screenshots>
+                          <Screenshot Path="ProviderAssets\WidgetScreenshot.png" DisplayAltText="The widget with the Claude and ChatGPT limits, each with a bar and its reset time" />
+                        </Screenshots>
+                      </LightMode>
+                    </ThemeResources>
+                  </Definition>
+                </Definitions>
+              </WidgetProvider>
+            </uap3:Properties>
+          </uap3:AppExtension>
+        </uap3:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+</Package>

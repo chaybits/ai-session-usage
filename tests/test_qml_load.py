@@ -273,7 +273,7 @@ SCENARIOS: dict[str, dict] = {
                                   env={"FAKE_CLAUDE_ANSWER": json.dumps(test_claudecode.ANSWER),
                                        "FAKE_CODEX_ANSWER": json.dumps(test_codex.ANSWER)}, record="record.jsonl"),
     "unreadable": dict(stub=stub("json.dumps({'ok': False, 'error': 'unreadable', 'message': '/x/c.json: JSONDecodeError'})")),
-    # the failures the helper reports since the CLIs are asked directly (D16, D20): the program not found, the CLI
+    # the failures the helper reports since the CLIs are asked directly: the program not found, the CLI
     # ran but gave no usable answer, a changed shape, and a login gone after a good answer
     "nocli": dict(stub=stub("json.dumps({'ok': False, 'error': 'nocli', 'message': 'claude'})")),
     "cli": dict(stub=stub("json.dumps({'ok': False, 'error': 'cli', 'message': 'exit 3: boom'})")),
@@ -578,7 +578,7 @@ class TestQmlLoad(unittest.TestCase):
         self.assertEqual(len(compact), 4, compact)
 
     def test_every_text_is_drawn_natively(self) -> None:
-        # D10: Qt's default text rendering made text growing with the width look stretched; every label of the
+        # Qt's default text rendering made text growing with the width look stretched; every label of the
         # card and the panel form draws its font at its own size
         card = self.probe("both-providers-en")["renderTypes"]
         self.assertEqual(set(card), {"1"}, card)

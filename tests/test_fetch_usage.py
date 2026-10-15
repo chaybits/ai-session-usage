@@ -1,7 +1,7 @@
 """Tests for the usage helper's entry point and the shared row logic in src/contents/code/ (stdlib unittest).
 
 The helper runs as a subprocess so exit code and stdout are asserted for real. Since 2026-10-08 it talks to no
-server and reads no login (ARCHITECTURE D18, D20): each CLI is asked over its own protocol, covered by
+server and reads no login: each CLI is asked over its own protocol, covered by
 test_claudecode.py and test_codex.py with fake programs. Here: Claude's rows as a function, the arguments, and
 direct runs of the script that either get no login (so no CLI is started) or a fake ``claude`` on a sandbox
 PATH with HOME in the sandbox (the real one is also looked for under ~/.local/bin); the real CLIs never run.
@@ -184,7 +184,7 @@ class TestDirectScript(unittest.TestCase):
 class TestArguments(unittest.TestCase):
     def test_unknown_or_misplaced_arguments_are_a_usage_error_with_exit_0(self) -> None:
         for args in (["--provider", "gemini"], ["--provider"], ["a.json", "b.json"],
-                     ["--source", "endpoint"],  # gone since D18: this helper never reads Claude's login
+                     ["--source", "endpoint"],  # gone since 2026-10-08: this helper never reads Claude's login
                      ["--source"], ["--provider", "codex", "--source", "statusline"],
                      ["--provider", "codex", "--claude", "x"], ["--provider", "claude", "--codex", "x"], ["--codex"]):
             with tempfile.TemporaryDirectory() as tmp:

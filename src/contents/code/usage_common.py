@@ -1,7 +1,7 @@
 """Shared parts of the usage helper: the output contract, how a CLI is found and asked, and value checks.
 
 Each source module (``usage_claudecode``, ``usage_statusline``, ``usage_codex``) returns a result dict;
-``fetch_usage.py`` prints it with ``emit``. Since 2026-10-08 (D18, D20) nothing here talks to a server or reads
+``fetch_usage.py`` prints it with ``emit``. Since 2026-10-08 nothing here talks to a server or reads
 a login: Claude Code and Codex are started and asked over their own protocols, and the login files are only
 checked to exist. ``ask_cli`` is the one place a CLI is spawned: it bounds the run and, on a timeout, ends the
 whole process group, since either CLI may be installed as a launcher script that starts the real program as a

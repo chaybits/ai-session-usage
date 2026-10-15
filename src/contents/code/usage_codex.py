@@ -6,8 +6,7 @@ answers ``account/rateLimits/read`` with the plan's windows, per metered limit: 
 reads the answer and closes the connection, on which the server exits. OpenAI marks the app server experimental
 (``codex app-server --help``), so its shape may change; a change shows as "Unexpected answer". The token never
 leaves Codex. Until 2026-10-08 this module read the token from ``auth.json`` and asked OpenAI's usage endpoint
-itself; that source is gone (docs/ARCHITECTURE.md D20; the git tag ``codex-endpoint-source-last`` and
-``archive/codex-endpoint-source-20261008/`` keep it).
+itself; that source is gone; the git tag ``codex-endpoint-source-last`` keeps it.
 """
 from __future__ import annotations
 

@@ -11,7 +11,7 @@ is left and it is grabbed again. Then the references, each a fresh widget loaded
   Plasma draws something else while dragging (a scaled copy, say).
 - ``fresh``: at the released size, against the widget after the drag. A difference would mean the drag
   leaves something behind.
-- ``render-*``: at ``--big`` size, the widget as it is (native text, D10) beside copies switched to Qt's two
+- ``render-*``: at ``--big`` size, the widget as it is (native text) beside copies switched to Qt's two
   other ways of drawing text: its default (distance field, what Plasma's own labels use) and curves.
 
 Prints a JSON summary and leaves every picture in the output folder, with 3x enlargements of a text crop

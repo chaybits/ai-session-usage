@@ -1,0 +1,138 @@
+{
+  "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+  "type": "AdaptiveCard",
+  "version": "1.5",
+  "body": [
+    {
+      "type": "Container",
+      "height": "stretch",
+      "selectAction": {
+        "type": "Action.Execute",
+        "verb": "refresh",
+        "tooltip": "Refresh"
+      },
+      "items": [
+        {
+          "type": "TextBlock",
+          "text": "${notice}",
+          "wrap": true,
+          "isSubtle": true,
+          "$when": "${hasNotice}"
+        },
+        {
+          "type": "TextBlock",
+          "text": "${hint}",
+          "wrap": true,
+          "size": "small",
+          "isSubtle": true,
+          "spacing": "small",
+          "$when": "${hasHint}"
+        },
+        {
+          "type": "Container",
+          "$data": "${sections}",
+          "spacing": "default",
+          "items": [
+            {
+              "type": "TextBlock",
+              "text": "${name}",
+              "weight": "bolder",
+              "spacing": "none",
+              "$when": "${showName}"
+            },
+            {
+              "type": "TextBlock",
+              "text": "${note}",
+              "size": "small",
+              "isSubtle": true,
+              "wrap": true,
+              "spacing": "none",
+              "$when": "${hasNote}"
+            },
+            {
+              "type": "Container",
+              "$data": "${rows}",
+              "spacing": "small",
+              "items": [
+                {
+                  "type": "ColumnSet",
+                  "spacing": "none",
+                  "columns": [
+                    {
+                      "type": "Column",
+                      "width": "stretch",
+                      "verticalContentAlignment": "bottom",
+                      "items": [
+                        {
+                          "type": "TextBlock",
+                          "text": "${label}",
+                          "isSubtle": "${dim}",
+                          "spacing": "none"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "Column",
+                      "width": "auto",
+                      "verticalContentAlignment": "bottom",
+                      "$when": "${when != ''}",
+                      "items": [
+                        {
+                          "type": "TextBlock",
+                          "text": "${when}",
+                          "size": "small",
+                          "isSubtle": true,
+                          "spacing": "none"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "Column",
+                      "width": "auto",
+                      "verticalContentAlignment": "bottom",
+                      "items": [
+                        {
+                          "type": "TextBlock",
+                          "text": "${percent}",
+                          "weight": "bolder",
+                          "isSubtle": "${pctSubtle}",
+                          "horizontalAlignment": "right",
+                          "spacing": "none"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "Image",
+                  "url": "${bar}",
+                  "altText": "${alt}",
+                  "size": "stretch",
+                  "spacing": "small"
+                }
+              ]
+            },
+            {
+              "type": "TextBlock",
+              "text": "${message}",
+              "wrap": true,
+              "maxLines": 2,
+              "size": "small",
+              "color": "attention",
+              "spacing": "small",
+              "$when": "${hasMessage}"
+            }
+          ]
+        },
+        {
+          "type": "TextBlock",
+          "text": "${footer}",
+          "size": "small",
+          "isSubtle": true,
+          "spacing": "default",
+          "$when": "${hasFooter}"
+        }
+      ]
+    }
+  ]
+}

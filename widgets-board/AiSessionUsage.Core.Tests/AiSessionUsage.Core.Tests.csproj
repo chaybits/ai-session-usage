@@ -1,0 +1,10 @@
+<Project Sdk="MSTest.Sdk/4.5.1">
+  <!-- dotnet test widgets-board/AiSessionUsage.Core.Tests: the logic library on any platform. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>AiSessionUsage.Core.Tests</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\AiSessionUsage.Core\AiSessionUsage.Core.csproj" />
+  </ItemGroup>
+</Project>

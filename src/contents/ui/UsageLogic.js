@@ -26,7 +26,7 @@ var BASE_WIDTH_UNITS = 22
 var MIN_WIDTH_UNITS = 8
 // The least height asked for outside "make the widget taller": enough for the title and one row to scroll in.
 var MIN_HEIGHT_UNITS = 4
-// Shrink-to-fit grows back only to strictly under the scale last seen overflowing (D7): without this margin the
+// Shrink-to-fit grows back only to strictly under the scale last seen overflowing: without this margin the
 // ceiling equals that scale, the fit grows to it, overflows, and hops between the two for ever.
 var CEILING_MARGIN = 0.005
 // The height of the slot the widget was designed in (with BASE_WIDTH_UNITS, about 400 x 256): what a widget just

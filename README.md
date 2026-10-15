@@ -2,7 +2,9 @@
 
 English | [Türkçe](README.tr.md)
 
-A KDE Plasma 6 widget and a Windows Rainmeter skin showing your Claude Code and ChatGPT (Codex) subscription limits, with reset times.
+![](docs/00-banner.jpg)
+
+Claude Code and ChatGPT (Codex) subscription limits with reset times, as a KDE Plasma 6 widget, a Rainmeter skin or a Windows 11 Widgets Board widget.
 
 ![The card on a KDE Plasma desktop: three Claude rows, Session (5hr), Weekly (7 day) and Weekly (Fable), and two ChatGPT rows, each with a percentage, a bar and its reset time. Example values.](docs/01-claude-and-chatgpt.png)
 
@@ -10,7 +12,7 @@ A KDE Plasma 6 widget and a Windows Rainmeter skin showing your Claude Code and 
 
 You need:
 
-- Python 3.9 or newer on the `PATH` (as `python3` on Linux, `python` on Windows).
+- Python 3.9 or newer on the `PATH` (as `python3` on Linux, `python` on Windows). The Widgets Board version brings its own.
 - Claude Code, logged in with a Claude subscription, or the Codex CLI, logged in with a ChatGPT account. One is enough; a provider you are not logged in to is left out.
 
 No extra dependencies: the helper uses only the Python standard library.
@@ -40,6 +42,12 @@ Then open the `.rmskin`: Rainmeter's Skin Installer shows the package (ai-sessio
 
 ![The same card as a Rainmeter skin on a Windows desktop. Example values.](docs/02-windows.png)
 
+### Windows 11 (Widgets Board)
+
+Install **AI Session Usage** from the Microsoft Store, then open the Widgets Board (Win+W), click **+** (Add widgets) and pin **AI Session Usage**. Python is inside the package; Claude Code or the Codex CLI must be signed in on the PC. The small widget shows one row per service, the medium two, the large all of them with their reset times; a click on the widget asks the tools again at once, otherwise they are asked every five minutes while the Board shows it.
+
+![The widget on the Windows 11 Widgets Board: the Claude and ChatGPT rows, each with a percentage, a bar and its reset time. Example values.](docs/07-widgets-board.png)
+
 ### From source
 
 From a clone, `python3 scripts/build_plasmoid.py` writes the same `.plasmoid` to `dist/`, or install the folder directly with `kpackagetool6 --type Plasma/Applet --install src`. For development, link the folder instead, so an edit is live after `systemctl --user restart plasma-plasmashell.service`:
@@ -48,7 +56,7 @@ From a clone, `python3 scripts/build_plasmoid.py` writes the same `.plasmoid` to
 ln -s "$PWD/src" ~/.local/share/plasma/plasmoids/io.github.chaybits.aisessionusage
 ```
 
-On Windows, `python scripts/build_rmskin.py` writes the same `.rmskin` to `dist/`.
+On Windows, `python scripts/build_rmskin.py` writes the same `.rmskin` to `dist/`. The Widgets Board package: `python scripts/build_msix.py --stage-only` (any system) fetches Python's embeddable package, checks its SHA-256 and stages it with the helper; on Windows with Visual Studio 2026 (or its Build Tools, with the WinUI build tools), `python scripts/build_msix.py --sideload cert.pfx` builds a `.msix` signed for sideloading (Developer Mode on; the certificate's subject is the manifest's Publisher), `--store` the unsigned `.msixupload` the Store takes.
 
 ## Usage
 
@@ -115,11 +123,11 @@ python3 -B ~/.local/share/plasma/plasmoids/io.github.chaybits.aisessionusage/con
 
 ### Windows
 
-On Windows the settings are the skin's variables: in Rainmeter's **Manage** window select the skin, click **Edit**, change a value, save, and click **Refresh**. They are `RefreshMinutes` (5), `ShowClaude` and `ShowCodex` (1, or 0 to hide), `ClaudeSource` (`claudecode` or `statusline`), `ClaudeProgram` and `CodexProgram` (empty: found on the `PATH`), `WarnPercent` (80), `CriticalPercent` (95), `StaleMinutes` (15), and the colours. The status-line source needs the same `statusLine` entry in `%USERPROFILE%\.claude\settings.json`, pointing at the skin's copy of the script, `Documents\Rainmeter\Skins\AiSessionUsage\@Resources\code\statusline_tap.py` (in JSON, write each backslash twice); the numbers are kept in `%LOCALAPPDATA%\ai-session-usage\claude-statusline.json`.
+On Windows the settings are the skin's variables: in Rainmeter's **Manage** window select the skin, click **Edit**, change a value, save, and click **Refresh**. They are `RefreshMinutes` (5), `ShowClaude` and `ShowCodex` (1, or 0 to hide), `ClaudeSource` (`claudecode` or `statusline`), `ClaudeProgram` and `CodexProgram` (empty: found on the `PATH`), `WarnPercent` (80), `CriticalPercent` (95), `StaleMinutes` (15), and the colours. The status-line source needs the same `statusLine` entry in `%USERPROFILE%\.claude\settings.json`, pointing at the skin's copy of the script, `Documents\Rainmeter\Skins\AiSessionUsage\@Resources\code\statusline_tap.py` (in JSON, write each backslash twice); the numbers are kept in `%LOCALAPPDATA%\ai-session-usage\claude-statusline.json`. The Widgets Board version has no settings: both services are shown and Claude Code is asked directly.
 
 ## Privacy
 
-The widget opens no connection of its own. The two command-line tools it runs contact their own services, each with its own login. No login file is read; each is only checked to exist, so that someone without that tool sees no section for it. In status-line mode one cache file is written, holding percentages and reset times only. A refresh sends no prompt and opens no conversation, so it spends none of the limits it shows. The Windows skin runs the same helper, so all of this holds there too.
+The widget opens no connection of its own. The two command-line tools it runs contact their own services, each with its own login. No login file is read; each is only checked to exist, so that someone without that tool sees no section for it. In status-line mode one cache file is written, holding percentages and reset times only. A refresh sends no prompt and opens no conversation, so it spends none of the limits it shows. The Windows skin and the Widgets Board widget run the same helper, so all of this holds there too; the Widgets Board widget also keeps a small log of its own runs (times, error kinds, no values) under `%LOCALAPPDATA%\ai-session-usage\`.
 
 ### How each source works
 
@@ -137,8 +145,8 @@ This is not an official Anthropic or OpenAI product. The services' terms: Anthro
 
 - Both tools are asked over requests their makers mark experimental or document only for their own clients; if one changes, that section shows "Unexpected answer" until the widget is updated.
 - From Claude Code's status line, the numbers are as fresh as Claude Code's last answer: with no session running they stay as they were, shown with the time they were seen, and a window whose reset has passed shows 0 % until Claude Code reports it again. The status line carries the 5-hour and weekly limits only; per-model caps need the default source, Claude Code itself.
-- KDE Plasma 6 on Linux, and Windows through Rainmeter; not macOS, where Claude Code keeps its login in the Keychain, so the check for a login file would find none.
-- On Windows the skin shows times in 24-hour form whatever the regional settings, and has no row order, panel form or settings pages: those are the Plasma widget's.
+- KDE Plasma 6 on Linux, and Windows through Rainmeter or the Windows 11 Widgets Board; not macOS, where Claude Code keeps its login in the Keychain, so the check for a login file would find none.
+- On Windows the skin shows times in 24-hour form whatever the regional settings, and has no row order, panel form or settings pages: those are the Plasma widget's. The Widgets Board widget has no settings either, marks outdated numbers with a note instead of a colour, and refreshes only while the Board shows it.
 - Subscription logins only: an API-key login has no subscription limits to show.
 - For ChatGPT, the rows are the limits the signed-in Codex CLI reports; the message caps of ordinary ChatGPT chat are not among them.
 - Usage made elsewhere (claude.ai, the ChatGPT apps) counts against the same limits but appears only at the next refresh, up to one refresh interval away, or at once on a click.

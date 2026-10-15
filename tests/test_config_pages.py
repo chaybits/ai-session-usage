@@ -218,7 +218,7 @@ ROWS_STEPS = [
 ]
 
 # The steps of the General scenario: Claude Code asked (the default, with its program field), then the status
-# line chosen (its snippet shown); the usage endpoint is no longer offered (D18).
+# line chosen (its snippet shown); the usage endpoint is no longer offered.
 GENERAL_STEPS = [
     """results => {
         const snippet = () => harness.find(page.item, i => i.objectName === "statusLineSnippet")
@@ -316,8 +316,8 @@ class TestConfigPages(unittest.TestCase):
         self.assertEqual(r["atStart"], ["claudecode", True, False], "Claude Code asked: its program field shown")
         self.assertEqual(r["sources"], ["Claude Code itself (asked for its usage; no login is read here)",
                                         "Claude Code's status line (no login is read; 5-hour and weekly only)"],
-                         "the two sources, and no usage endpoint (D18)")
-        self.assertTrue(r["codexProgram"], "the Codex program field (D20)")
+                         "the two sources, and no usage endpoint")
+        self.assertTrue(r["codexProgram"], "the Codex program field")
         self.assertEqual(r["afterStatusLine"], ["statusline", False, True], "the status line: its snippet shown")
         snippet = json.loads(r["snippet"])
         self.assertEqual(snippet["statusLine"]["type"], "command")

@@ -31,7 +31,7 @@ from usage_common import emit
 
 PROVIDERS = ("claude", "codex")
 # Claude's sources; the first is the default. Codex has one way. Asking either service's usage endpoint with the
-# CLI's login is gone (D18, D20).
+# CLI's login is gone.
 SOURCES = ("claudecode", "statusline")
 PROGRAM_OPTIONS = {"--claude": "claude", "--codex": "codex"}
 

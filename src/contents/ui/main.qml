@@ -11,7 +11,7 @@ import "UsageLogic.js" as Logic
 // Codex (its plan's windows), in the servers' order, each polled every few minutes by
 // contents/code/fetch_usage.py. Click anywhere to refresh. Each CLI is asked for its own usage, with its own
 // login, over its own protocol (Claude Code headless, or its status line; Codex's app server): the widget
-// reads no login and talks to no server (docs/ARCHITECTURE.md D16, D18, D20).
+// reads no login and talks to no server.
 PlasmoidItem {
     id: root
 
@@ -28,7 +28,7 @@ PlasmoidItem {
     readonly property var providers: [
         { id: "claude", name: i18n("Claude"), cli: i18n("Claude Code"), show: Plasmoid.configuration.showClaude,
           path: Plasmoid.configuration.credentialsPath,
-          // a stored "endpoint" (a source removed on 2026-10-08, D18) is read as the default
+          // a stored "endpoint" (a source removed on 2026-10-08) is read as the default
           source: Plasmoid.configuration.claudeSource === "statusline" ? "statusline" : "claudecode",
           program: Plasmoid.configuration.claudeCommand },
         { id: "codex", name: i18n("ChatGPT"), cli: i18n("Codex"), show: Plasmoid.configuration.showCodex,
@@ -277,7 +277,7 @@ PlasmoidItem {
                                                    Plasmoid.configuration.zoomPercent) * shrink
 
         // What the desktop is asked for. It grows a widget's slot whenever the request rises above it after the
-        // widget was placed, and never shrinks it back (D14). So on a desktop the request is the size the widget
+        // widget was placed, and never shrinks it back. So on a desktop the request is the size the widget
         // has (never more than the design size), except once in its life: a widget first shown asks for the
         // design size just after it appears (`askDesign`), which grows a new widget to it, and a second later
         // `placed` is kept in its settings. In a panel the card is a popup, sized to its rows as before; "make the

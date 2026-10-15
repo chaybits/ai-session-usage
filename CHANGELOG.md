@@ -4,6 +4,14 @@ All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [0.1.2] - 2026-10-16
+
+### Added
+- A Windows 11 Widgets Board version, for the Microsoft Store: the same helper inside a packaged app with its own Python, an Adaptive Card with the rows, bars and reset times in three sizes; a click on it refreshes.
+
+### Changed
+- The widget has its own icon instead of a generic system-monitor one: three usage bars filled to a third, two thirds and the whole way, in white, orange and red.
+
 ## [0.1.1] - 2026-10-11
 
 ### Fixed

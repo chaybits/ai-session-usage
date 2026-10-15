@@ -126,7 +126,7 @@ class TestTap(Sandbox):
         self.assertEqual(json.loads(self.status.read_text(encoding="utf-8"))["rate_limits"], LIMITS)
 
     def test_an_expired_window_shows_zero_on_the_bar(self) -> None:
-        # a window whose reset has passed is kept (ARCHITECTURE D15) but its old percentage is no longer true
+        # a window whose reset has passed is kept but its old percentage is no longer true
         old = {"five_hour": {"used_percentage": 90, "resets_at": NOW - 600}, "seven_day": {"used_percentage": 40, "resets_at": NOW + 86400}}
         self.status.parent.mkdir(parents=True)
         self.status.write_text(json.dumps({"captured_at": NOW - 700, "rate_limits": old}), encoding="utf-8")
@@ -170,7 +170,7 @@ class TestHelperSource(Sandbox):
         self.assertEqual(self.helper()["error"], "nologin")
 
     def test_a_status_file_left_by_an_earlier_login_is_not_shown_after_logout(self) -> None:
-        # /logout removes the login file and leaves the status file: the provider is left out (ARCHITECTURE D4)
+        # /logout removes the login file and leaves the status file: the provider is left out
         self.tap(json.dumps(dict(SESSION, rate_limits=LIMITS)))
         self.assertTrue(self.status.exists())
         self.assertEqual(self.helper()["error"], "nologin")
