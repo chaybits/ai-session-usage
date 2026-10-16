@@ -13,6 +13,9 @@ slot to the preferred size, and never shrinks it back (plasma-workspace, gridlay
 adjustToItemSizeHints). Two more runs check that a slot the user set keeps its size when the card grows after
 it was placed (the answers arriving late, then a status line), and what size a widget just added gets.
 
+A last check reads the journal: no program the runs started may have dumped core (the services the private
+bus starts by itself abort when they cannot find the headless KWin).
+
 Skipped, loudly, where KWin, plasmashell or the activity daemon is missing. About 25 s (the runs are parallel).
 """
 from __future__ import annotations
@@ -20,6 +23,7 @@ from __future__ import annotations
 import os
 import shutil
 import tempfile
+import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -36,6 +40,9 @@ LATE_S = 4
 NARROW = (100, 100, 320, 208)
 SCALE = 1.5
 SCREEN = (1920, 1200)
+# systemd-coredump writes a crash's journal entry after it has compressed the dump; a program that aborted as a
+# run ended is in the journal a moment later.
+COREDUMP_SETTLE_S = 3
 
 PROBE = """
     TestEvent { id: __ev }
@@ -190,6 +197,7 @@ class TestDesktopMouse(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
+        cls.started = time.time()
         runs = {
             # a click within 10 s of the first fetch is throttled; the left-click check needs it to count
             "mouse": (GEOMETRY, PROBE, q.stub(q.CLAUDE_OK, q.CODEX_OK), "DESKTOP",
@@ -265,6 +273,16 @@ class TestDesktopMouse(unittest.TestCase):
 
     def test_a_press_and_hold_still_enters_edit_mode(self) -> None:
         self.assertTrue(self.report["holdEntersEditMode"], self.report)
+
+    def test_no_program_it_starts_dumps_core(self) -> None:
+        # the private bus starts the desktop portal, kded6 and the secret service for plasmashell; without the
+        # headless KWin's socket each aborts, dozens per run, and every dump stays on disk for weeks
+        time.sleep(COREDUMP_SETTLE_S)
+        dumps = sh.core_dumps_since(self.started)
+        if dumps is None:
+            self.skipTest("SKIPPED: the journal's core-dump entries cannot be read here")
+        counts = {exe: dumps.count(exe) for exe in sorted(set(dumps))}
+        self.assertEqual(counts, {}, "programs the shell runs started dumped core (coredumpctl list)")
 
 
 if __name__ == "__main__":

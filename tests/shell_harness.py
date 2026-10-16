@@ -23,7 +23,7 @@ from pathlib import Path
 
 import test_qml_load as q  # the package path, the stubs and the sandbox helpers are shared with the load tests
 
-TOOLS = ("plasmashell", "kwin_wayland", "dbus-run-session")
+TOOLS = ("plasmashell", "kwin_wayland", "dbus-run-session", "dbus-update-activation-environment")
 # The D-Bus service whose program plasmashell needs running before it loads (see session_command()).
 ACTIVITY_SERVICE = "org.kde.ActivityManager.service"
 # KWin's virtual output. Its --scale flag only multiplies the mode, and with no saved output config KWin picks
@@ -34,6 +34,10 @@ DEADLINE_S = 60
 # How often the log is read for the tags while the shell runs.
 POLL_S = 0.5
 TAG = re.compile(r"CU-([A-Z0-9-]+) (\{.*\})")
+# The catalog id of the journal entry systemd-coredump writes for every process that dumps core.
+COREDUMP_MESSAGE_ID = "fc2e22bc6ee647b6b90729ab34a250b1"
+# A filtered journal read takes well under a second; this only bounds a journal that hangs.
+JOURNAL_TIMEOUT_S = 30
 # A summary shows this many of a run's error lines; the full list is in its shell log.
 SHOWN_ERRORS = 5
 # QML a probe needs on the desktop, inserted with it: the desktop's container around the widget (it owns the
@@ -118,9 +122,50 @@ def missing() -> str | None:
 
 
 def session_command(daemon: str) -> str:
-    """The session KWin runs. The activity daemon is started here, inside the compositor: started by D-Bus
-    on demand it would lack the compositor socket, fail to open a display, and plasmashell would abort."""
-    return f"sh -c '{daemon} & sleep 1; exec plasmashell --no-respawn'"
+    """The session KWin runs. The activity daemon is started here, inside the compositor, before plasmashell,
+    which aborts when it is not running yet.
+
+    Every other service plasmashell asks for (the desktop portal, kded6, the secret service) the private bus
+    starts by itself, with the environment the bus was started with, which has no display (KWin creates its
+    socket after the bus and hands WAYLAND_DISPLAY to this command alone). So the session first tells the bus
+    to start them on Qt's offscreen platform, as the load tests run everything. Not the compositor's socket:
+    kded6 outlives the shell's end by running kconf_update, and every Qt helper that starts once KWin is gone
+    would abort for want of it."""
+    # LOAD-BEARING: without the update every Qt service the private bus starts finds no display and aborts,
+    # dozens of core dumps per run (test_desktop.py's test_no_program_it_starts_dumps_core goes red).
+    return (f"sh -c 'dbus-update-activation-environment QT_QPA_PLATFORM=offscreen; {daemon} & sleep 1; "
+            f"exec plasmashell --no-respawn'")
+
+
+def own_cgroup() -> str | None:
+    """This process's cgroup (v2), which every program a shell run starts inherits; None without cgroup v2."""
+    try:
+        for line in Path("/proc/self/cgroup").read_text(encoding="utf-8").splitlines():
+            if line.startswith("0::"):
+                return line[len("0::"):]
+    except OSError:
+        pass
+    return None
+
+
+def core_dumps_since(start: float) -> list[str] | None:
+    """The programs started from this process's cgroup (so by this test, not by the real desktop) that dumped
+    core since ``start`` (epoch seconds), as systemd-coredump recorded them in the journal. None where that
+    cannot be read: no journalctl, no cgroup v2, or the journal refused. Reads only each entry's program path."""
+    cgroup = own_cgroup()
+    if cgroup is None or not shutil.which("journalctl"):
+        return None
+    try:
+        proc = subprocess.run(["journalctl", "--no-pager", "-o", "json", "--output-fields=COREDUMP_EXE",
+                               f"--since=@{int(start)}", f"MESSAGE_ID={COREDUMP_MESSAGE_ID}",
+                               f"COREDUMP_CGROUP={cgroup}"],
+                              capture_output=True, encoding="utf-8", errors="replace", check=False,
+                              timeout=JOURNAL_TIMEOUT_S, env={**os.environ, "LC_ALL": "C"})
+    except subprocess.TimeoutExpired:
+        return None
+    if proc.returncode != 0:
+        return None
+    return [json.loads(line).get("COREDUMP_EXE", "?") for line in proc.stdout.splitlines() if line.startswith("{")]
 
 
 def config_groups(prefix: str, groups: dict[str, dict[str, str]]) -> str:

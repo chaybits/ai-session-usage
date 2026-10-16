@@ -44,7 +44,7 @@ Sonra `.rmskin` dosyasını açın: Rainmeter'ın **Skin Installer** penceresi p
 
 ### Windows 11 (Pencere Öğeleri)
 
-**AI Session Usage** uygulamasını Microsoft Store'dan kurun; sonra Pencere Öğeleri panosunu (Widgets Board, Win+W) açın, pencere öğesi eklemek için **+** düğmesine tıklayın ve **AI Session Usage** bileşenini sabitleyin. Python paketin içindedir; bilgisayarda giriş yapılmış bir Claude Code ya da Codex CLI bulunmalıdır. Küçük boy her servisten bir satır, orta boy her servisten iki satır, büyük boy ise tüm satırları sıfırlanma zamanlarıyla gösterir. Bileşene tıklayınca araçlara hemen yeniden sorulur; bunun dışında araçlara, bileşen panoda göründüğü sürece beş dakikada bir sorulur.
+**AI Session Usage** uygulamasını [Microsoft Store](https://apps.microsoft.com/detail/9N0QG2HRLKWK)'dan kurun; sonra Pencere Öğeleri panosunu (Widgets Board, Win+W) açın, pencere öğesi eklemek için **+** düğmesine tıklayın ve **AI Session Usage** bileşenini sabitleyin. Python paketin içindedir; bilgisayarda giriş yapılmış bir Claude Code ya da Codex CLI bulunmalıdır. Küçük boy her servisten bir satır, orta boy her servisten iki satır, büyük boy ise tüm satırları sıfırlanma zamanlarıyla gösterir. Bileşene tıklayınca araçlara hemen yeniden sorulur; bunun dışında araçlara, bileşen panoda göründüğü sürece beş dakikada bir sorulur.
 
 ![Windows 11'in Pencere Öğeleri panosunda bileşen: Claude ve ChatGPT satırları, her birinde yüzde, çubuk ve sıfırlanma zamanı. Örnek değerler.](docs/07-widgets-board.png)
 
@@ -155,3 +155,7 @@ Bu proje Anthropic ya da OpenAI'nin resmi bir ürünü değildir. İlgili servis
 ## Lisans
 
 GPL-3.0-or-later (bkz. [`LICENSE`](LICENSE)).
+
+---
+
+Kod da görseller de yapay zekâ yardımıyla hazırlandı.

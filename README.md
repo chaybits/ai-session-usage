@@ -44,7 +44,7 @@ Then open the `.rmskin`: Rainmeter's Skin Installer shows the package (ai-sessio
 
 ### Windows 11 (Widgets Board)
 
-Install **AI Session Usage** from the Microsoft Store, then open the Widgets Board (Win+W), click **+** (Add widgets) and pin **AI Session Usage**. Python is inside the package; Claude Code or the Codex CLI must be signed in on the PC. The small widget shows one row per service, the medium two, the large all of them with their reset times; a click on the widget asks the tools again at once, otherwise they are asked every five minutes while the Board shows it.
+Install **AI Session Usage** from the [Microsoft Store](https://apps.microsoft.com/detail/9N0QG2HRLKWK), then open the Widgets Board (Win+W), click **+** (Add widgets) and pin **AI Session Usage**. Python is inside the package; Claude Code or the Codex CLI must be signed in on the PC. The small widget shows one row per service, the medium two, the large all of them with their reset times; a click on the widget asks the tools again at once, otherwise they are asked every five minutes while the Board shows it.
 
 ![The widget on the Windows 11 Widgets Board: the Claude and ChatGPT rows, each with a percentage, a bar and its reset time. Example values.](docs/07-widgets-board.png)
 
@@ -155,3 +155,7 @@ This is not an official Anthropic or OpenAI product. The services' terms: Anthro
 ## License
 
 GPL-3.0-or-later (see [`LICENSE`](LICENSE)).
+
+---
+
+Made with the help of AI, the code and the images alike.
